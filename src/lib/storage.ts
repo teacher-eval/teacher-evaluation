@@ -37,10 +37,12 @@ export function teacherAvatarUrl(value: string | null | undefined): string | nul
   if (!value) return null;
   if (/^https?:\/\//i.test(value)) return value;
 
-  const base = optionalEnv("NEXT_PUBLIC_SUPABASE_URL");
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL || optionalEnv("NEXT_PUBLIC_SUPABASE_URL");
   if (!base) return null;
 
-  const bucket = optionalEnv("SUPABASE_STORAGE_BUCKET", "teacher-avatars");
+  const bucket =
+    process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET ||
+    optionalEnv("SUPABASE_STORAGE_BUCKET", "teacher-avatar");
   const path = value.replace(/^\/+/, "");
   return `${base.replace(/\/+$/, "")}/storage/v1/object/public/${bucket}/${path}`;
 }
@@ -50,7 +52,7 @@ let client: SupabaseClient | null = null;
 function storage(): SupabaseClient {
   if (client) return client;
   client = createClient(
-    requireEnv("NEXT_PUBLIC_SUPABASE_URL"),
+    process.env.NEXT_PUBLIC_SUPABASE_URL || requireEnv("NEXT_PUBLIC_SUPABASE_URL"),
     requireEnv("SUPABASE_SERVICE_ROLE_KEY"),
     { auth: { persistSession: false, autoRefreshToken: false } },
   );
@@ -58,7 +60,10 @@ function storage(): SupabaseClient {
 }
 
 function bucketName(): string {
-  return optionalEnv("SUPABASE_STORAGE_BUCKET", "teacher-avatars")!;
+  return (
+    process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET ||
+    optionalEnv("SUPABASE_STORAGE_BUCKET", "teacher-avatar")!
+  );
 }
 
 /**
@@ -85,16 +90,21 @@ export async function uploadTeacherAvatar(file: File): Promise<AvatarUpload> {
     };
   }
 
-  const path = `${randomBytes(16).toString("hex")}.${ALLOWED[mime]}`;
-  const { error } = await storage()
-    .storage.from(bucketName())
-    .upload(path, bytes, { contentType: mime, upsert: false });
+  try {
+    const path = `${randomBytes(16).toString("hex")}.${ALLOWED[mime]}`;
+    const { error } = await storage()
+      .storage.from(bucketName())
+      .upload(path, bytes, { contentType: mime, upsert: false });
 
-  if (error) {
-    return { ok: false, error: "Could not save the uploaded image." };
+    if (error) {
+      return { ok: false, error: error.message || "Could not save the uploaded image." };
+    }
+
+    return { ok: true, path };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Storage service error.";
+    return { ok: false, error: message };
   }
-
-  return { ok: true, path };
 }
 
 /** Best-effort removal of a replaced or deleted avatar. */
