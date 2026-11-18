@@ -1,5 +1,6 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
@@ -555,6 +556,35 @@ export async function changeTwoFactorEmailAction(
 /* Forgot Password                                                            */
 /* -------------------------------------------------------------------------- */
 
+async function getBaseUrl(): Promise<string> {
+  try {
+    const h = await headers();
+    const origin = h.get("origin");
+    if (origin) return origin.replace(/\/$/, "");
+
+    const host = h.get("x-forwarded-host") ?? h.get("host");
+    const proto = h.get("x-forwarded-proto") ?? (host?.includes("localhost") ? "http" : "https");
+    if (host) return `${proto}://${host}`.replace(/\/$/, "");
+  } catch {
+    // outside request context
+  }
+
+  if (process.env.AUTH_URL && !process.env.AUTH_URL.includes("localhost")) {
+    return process.env.AUTH_URL.replace(/\/$/, "");
+  }
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  }
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+  if (process.env.AUTH_URL) {
+    return process.env.AUTH_URL.replace(/\/$/, "");
+  }
+
+  return "http://localhost:3000";
+}
+
 const forgotPasswordSchema = z.object({
   email: z.email("Please enter a valid email address."),
 });
@@ -603,7 +633,8 @@ export async function forgotPasswordAction(
     const token = await createPasswordResetToken(user.id, user.password);
     const minutes = Math.round(PASSWORD_RESET_TTL_SECONDS / 60);
 
-    const resetUrl = `${process.env.AUTH_URL ?? "http://localhost:3000"}/reset-password?token=${encodeURIComponent(token)}`;
+    const baseUrl = await getBaseUrl();
+    const resetUrl = `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`;
 
     await sendMail({
       to: twoFactor.email ?? email,
