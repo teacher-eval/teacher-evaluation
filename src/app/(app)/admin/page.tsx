@@ -58,7 +58,7 @@ export default async function AdminDashboardPage() {
         actions={<DateChip />}
       />
 
-      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard
           href="/admin/teachers"
           label="Teachers"
@@ -74,14 +74,6 @@ export default async function AdminDashboardPage() {
           meta="Manage accounts"
           iconClassName="bg-gold-100 text-gold-700"
           icon={<NavIcon name="students" className="h-6 w-6" />}
-        />
-        <StatCard
-          href="/admin/courses"
-          label="Subjects"
-          value={data.totalSubjects}
-          meta="Courses & subjects"
-          iconClassName="bg-success-50 text-success-600"
-          icon={<NavIcon name="courses" className="h-6 w-6" />}
         />
         <StatCard
           href="/admin/reports"
