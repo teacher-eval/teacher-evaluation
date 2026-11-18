@@ -1,6 +1,6 @@
 export default function AuthLoading() {
   return (
-    <div className="animate-pulse w-full max-w-[440px] my-6" aria-busy="true">
+    <div className="animate-pulse mx-auto w-full max-w-[400px] my-6" aria-busy="true">
       <div className="rounded-2xl border border-slate-200/80 bg-white p-6 sm:p-8 shadow-xl">
         <div className="flex flex-col items-center mb-6">
           <div className="h-14 w-14 rounded-full bg-slate-200 mb-4" />

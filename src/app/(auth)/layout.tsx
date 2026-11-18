@@ -7,7 +7,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <Image src="/bg.webp" alt="" fill priority sizes="100vw" className="object-cover" />
         <div className="absolute inset-0 bg-navy-900/55" />
       </div>
-      <main className="animate-fade-in-up relative z-10 w-full">{children}</main>
+      <main className="animate-fade-in-up relative z-10 flex w-full justify-center items-center">{children}</main>
     </div>
   );
 }
