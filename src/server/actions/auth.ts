@@ -6,7 +6,7 @@ import { z } from "zod";
 import { signIn, signOut } from "@/auth";
 import type { UserRole } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/db";
-import { logAudit, logSecurity } from "@/lib/logger";
+import { logAudit, logError, logSecurity } from "@/lib/logger";
 import { homeForRole } from "@/lib/nav";
 import {
   clientIp,
@@ -41,13 +41,32 @@ export type AuthFormState = {
 const ROLE_VALUES = ["student", "teacher", "admin"] as const;
 
 
+function isNextRedirect(error: unknown): boolean {
+  return (
+    Boolean(error) &&
+    typeof error === "object" &&
+    "digest" in (error as Record<string, unknown>) &&
+    typeof (error as Record<string, unknown>).digest === "string" &&
+    ((error as Record<string, unknown>).digest as string).startsWith("NEXT_REDIRECT")
+  );
+}
+
 async function finishLogin(user: { id: number; role: UserRole }): Promise<never> {
   const token = await createLoginToken(user.id);
-  await signIn("credentials", {
-    token,
-    redirectTo: homeForRole(user.role),
-  });
-  // signIn always redirects; this keeps TypeScript satisfied.
+  try {
+    await signIn("credentials", {
+      token,
+      redirectTo: homeForRole(user.role),
+    });
+  } catch (error) {
+    if (isNextRedirect(error)) {
+      throw error;
+    }
+    logError("auth.signin_failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
   redirect(homeForRole(user.role));
 }
 
@@ -152,8 +171,18 @@ export async function loginAction(
   void pruneRateLimits();
 
   logAudit("login_success", { userId: user.id, role: user.role });
-  await finishLogin(user);
-  return {};
+  try {
+    await finishLogin(user);
+    return {};
+  } catch (error) {
+    if (isNextRedirect(error)) {
+      throw error;
+    }
+    return {
+      error: "Unable to sign in right now. Please check your credentials and try again.",
+      values: { username, role },
+    };
+  }
 }
 
 /* -------------------------------------------------------------------------- */

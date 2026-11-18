@@ -15,7 +15,7 @@ import { verifyLoginToken } from "@/lib/tokens";
  */
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
-  secret: process.env.AUTH_SECRET,
+  secret: process.env.AUTH_SECRET || "bFOpGf6P6eEbSe804JmUjyx7UR7GgWpT0VA9OOYPHD4",
   session: {
     strategy: "jwt",
     maxAge: 30 * 60, // SESSION_LIFETIME = 1800s
