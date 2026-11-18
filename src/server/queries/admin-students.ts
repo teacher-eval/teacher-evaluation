@@ -1,0 +1,84 @@
+import type { Prisma } from "@/generated/prisma/client";
+import { prisma } from "@/lib/db";
+
+/** Matches the $limit = 5 in handleStudentActions(). */
+export const STUDENTS_PER_PAGE = 5;
+
+export type StudentRow = {
+  /** users.id — what the legacy forms post as `id`. */
+  id: number;
+  username: string;
+  fullName: string;
+  course: string;
+  yearLevel: number;
+  /** users.status, which is a free-form string rather than the students enum. */
+  status: string;
+};
+
+export type StudentList = {
+  rows: StudentRow[];
+  page: number;
+  totalPages: number;
+  totalRecords: number;
+  search: string;
+};
+
+export async function getStudentList({
+  page: requestedPage,
+  search,
+}: {
+  page: number;
+  search: string;
+}): Promise<StudentList> {
+  const where: Prisma.UserWhereInput = {
+    role: "student",
+    // The legacy list used an INNER JOIN students, so orphaned user rows are out.
+    student: { isNot: null },
+    ...(search
+      ? {
+          OR: [
+            { fullName: { contains: search, mode: "insensitive" } },
+            { username: { contains: search, mode: "insensitive" } },
+            {
+              student: {
+                is: { course: { contains: search, mode: "insensitive" } },
+              },
+            },
+          ],
+        }
+      : {}),
+  };
+
+  const totalRecords = await prisma.user.count({ where });
+  const totalPages = Math.max(1, Math.ceil(totalRecords / STUDENTS_PER_PAGE));
+  const page = Math.min(Math.max(1, requestedPage), totalPages);
+
+  const users = await prisma.user.findMany({
+    where,
+    orderBy: { fullName: "asc" },
+    skip: (page - 1) * STUDENTS_PER_PAGE,
+    take: STUDENTS_PER_PAGE,
+    select: {
+      id: true,
+      username: true,
+      fullName: true,
+      status: true,
+      student: { select: { course: true, yearLevel: true } },
+    },
+  });
+
+  return {
+    rows: users.map((user) => ({
+      id: user.id,
+      username: user.username,
+      fullName: user.fullName,
+      course: user.student!.course,
+      yearLevel: user.student!.yearLevel,
+      status: user.status,
+    })),
+    page,
+    totalPages,
+    totalRecords,
+    search,
+  };
+}

@@ -1,0 +1,762 @@
+@import "tailwindcss";
+
+/*
+ * Scan the React/TS sources for class names.
+ * Automatic detection already covers the project; this keeps it explicit.
+ */
+@source "../**/*.{ts,tsx}";
+
+/*
+ * NOTE: this is a STATIC build. The Play CDN it replaces scanned the live DOM,
+ * so it automatically picked up classes that JavaScript adds at runtime
+ * (toasts, validation states, sidebar toggles). A static build cannot do that:
+ * any utility applied dynamically must exist as a literal string inside one of
+ * the scanned .php/.js files, or Tailwind will not emit it. The dynamic classes
+ * in frontend/assets/js/*.js are written as literals, so they are already
+ * covered. For anything that is not, safelist it explicitly, e.g.
+ *     @source inline("<utility-you-build-at-runtime>");
+ *
+ * Shared UI is therefore expressed as component classes in the @layer
+ * components block below: those are compiled unconditionally and never depend
+ * on a runtime-built utility string.
+ */
+
+/* --------------------------------------------------------------------------
+ * Design tokens
+ *
+ * The old per-page inline `tailwind.config` blocks only defined navy, gold,
+ * surface, ink, primary and secondary. This is the same identity expanded
+ * into full, semantic scales so pages stop hardcoding #1A3A5C / #C8A84B.
+ * -------------------------------------------------------------------------- */
+@theme {
+    /* Navy — primary surface / brand */
+    --color-navy-50: #F4F7FA;
+    --color-navy-100: #E8EEF5;
+    --color-navy-200: #D3DFEB;
+    --color-navy-300: #A8BED4;
+    --color-navy-400: #6F92B2;
+    --color-navy-500: #3D6A91;
+    --color-navy-600: #22496E;
+    --color-navy-700: #1A3A5C;
+    --color-navy-800: #16324F;
+    --color-navy-900: #12283F;
+    --color-navy: #1A3A5C;
+
+    /* Gold — accent. 700 is the only shade safe for text on light surfaces. */
+    --color-gold-50: #FAF6EA;
+    --color-gold-100: #F3EBD3;
+    --color-gold-200: #E8DAB0;
+    --color-gold-300: #DCC789;
+    --color-gold-400: #D2B564;
+    --color-gold-500: #C8A84B;
+    --color-gold-600: #A98B34;
+    --color-gold-700: #8A6D28;
+    --color-gold: #C8A84B;
+
+    /* Neutrals */
+    --color-surface: #F7F8FA;
+    --color-ink: #1E2A3B;
+
+    /* Aliases kept for older markup */
+    --color-primary: #1A3A5C;
+    --color-secondary: #64748b;
+
+    /* Semantic */
+    --color-success-50: #ECFDF3;
+    --color-success-100: #D1FADF;
+    --color-success-600: #15803D;
+    --color-success-700: #166534;
+    --color-warning-50: #FFFBEB;
+    --color-warning-100: #FEF3C7;
+    --color-warning-600: #B45309;
+    --color-warning-700: #92400E;
+    /* Caution sits between warning and danger (e.g. "needs improvement"). */
+    --color-caution-50: #FFF7ED;
+    --color-caution-100: #FFEDD5;
+    --color-caution-500: #F97316;
+    --color-caution-600: #EA580C;
+    --color-caution-700: #C2410C;
+    --color-danger-50: #FEF2F2;
+    --color-danger-100: #FEE2E2;
+    --color-danger-600: #B91C1C;
+    --color-danger-700: #991B1B;
+    --color-info-50: #EFF6FF;
+    --color-info-100: #DBEAFE;
+    --color-info-600: #1D4ED8;
+    --color-info-700: #1E40AF;
+
+    /* Type */
+    --font-sans: var(--font-inter), Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-display: var(--font-poppins), Poppins, Inter, ui-sans-serif, system-ui, sans-serif;
+
+    /* Radius */
+    --radius-card: 1rem;
+    --radius-panel: 1.25rem;
+
+    /* Elevation */
+    --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+    --shadow-raised: 0 4px 6px -2px rgba(16, 24, 40, 0.05), 0 12px 16px -4px rgba(16, 24, 40, 0.10);
+    --shadow-overlay: 0 24px 48px -12px rgba(16, 24, 40, 0.35);
+}
+
+/* --------------------------------------------------------------------------
+ * Base / app shell
+ * -------------------------------------------------------------------------- */
+@layer base {
+    html {
+        -webkit-text-size-adjust: 100%;
+        scroll-behavior: smooth;
+    }
+
+    body {
+        text-rendering: optimizeLegibility;
+    }
+
+    /* Respect users who ask the OS to reduce motion. */
+    @media (prefers-reduced-motion: reduce) {
+        html {
+            scroll-behavior: auto;
+        }
+
+        *,
+        *::before,
+        *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+        }
+    }
+
+    :focus-visible {
+        outline: 2px solid var(--color-gold-600);
+        outline-offset: 2px;
+    }
+
+    /* Tables are the widest content in the app; never let them force a
+       horizontal page scroll — the wrapper handles overflow instead. */
+    main {
+        min-width: 0;
+    }
+}
+
+@layer components {
+    /* ---------------------------------------------------------------- layout */
+    .app-main {
+        @apply ml-0 flex-1 px-4 pb-10 pt-20 transition-all duration-300 sm:px-6 md:ml-64 md:px-8 md:pt-8;
+    }
+
+    .page-header {
+        @apply mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between;
+    }
+
+    .page-title {
+        @apply font-display text-2xl font-bold leading-tight tracking-tight text-slate-900 sm:text-[1.75rem];
+    }
+
+    .page-subtitle {
+        @apply mt-1 text-sm text-slate-500;
+    }
+
+    .page-actions {
+        @apply flex flex-wrap items-center gap-2 self-start md:self-auto;
+    }
+
+    .section-heading {
+        @apply font-display text-lg font-bold text-slate-800;
+    }
+
+    .section-subheading {
+        @apply mt-0.5 text-xs text-slate-500;
+    }
+
+    /* ----------------------------------------------------------------- cards */
+    .card {
+        @apply rounded-2xl border border-slate-200 bg-white shadow-card;
+    }
+
+    .card-header {
+        @apply flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-5 py-4 sm:px-6;
+    }
+
+    .card-body {
+        @apply p-5 sm:p-6;
+    }
+
+    .stat-card {
+        @apply flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-card transition-shadow duration-200;
+    }
+
+    a.stat-card {
+        @apply hover:border-navy-200 hover:shadow-raised focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-500 focus-visible:ring-offset-2;
+    }
+
+    .stat-label {
+        @apply mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500;
+    }
+
+    .stat-value {
+        @apply text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl;
+    }
+
+    .stat-meta {
+        @apply mt-1 text-xs text-slate-400;
+    }
+
+    .stat-icon {
+        @apply flex h-12 w-12 shrink-0 items-center justify-center rounded-xl;
+    }
+
+    /* --------------------------------------------------------------- buttons */
+    .btn {
+        @apply inline-flex min-h-[2.75rem] items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
+    }
+
+    .btn-primary {
+        @apply bg-navy text-white shadow-sm hover:bg-navy-800;
+    }
+
+    .btn-secondary {
+        @apply border border-slate-300 bg-white text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50;
+    }
+
+    .btn-ghost {
+        @apply text-navy hover:bg-navy-50;
+    }
+
+    .btn-danger {
+        @apply bg-danger-600 text-white shadow-sm hover:bg-danger-700;
+    }
+
+    .btn-gold {
+        @apply bg-gold-500 text-navy-900 shadow-sm hover:bg-gold-400;
+    }
+
+    .btn-sm {
+        @apply min-h-[2.25rem] px-3 py-1.5 text-xs;
+    }
+
+    .btn-lg {
+        @apply min-h-[3rem] px-5 py-3 text-base;
+    }
+
+    .icon-btn {
+        @apply inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-500;
+    }
+
+    .icon-btn-danger {
+        @apply hover:bg-danger-50 hover:text-danger-600;
+    }
+
+    /* ------------------------------------------------------------ form fields */
+    .field-label {
+        @apply mb-1.5 block text-sm font-medium text-slate-700;
+    }
+
+    .field-hint {
+        @apply mt-1.5 text-xs text-slate-500;
+    }
+
+    .field-error {
+        @apply mt-1.5 flex items-start gap-1.5 text-xs font-medium text-danger-600;
+    }
+
+    .input,
+    .select,
+    .textarea {
+        @apply block w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-base text-slate-900 shadow-sm transition-colors placeholder:text-slate-400 focus:border-navy focus:outline-none focus:ring-2 focus:ring-navy/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 sm:text-sm;
+    }
+
+    .input[aria-invalid="true"],
+    .select[aria-invalid="true"],
+    .textarea[aria-invalid="true"] {
+        @apply border-danger-600 focus:border-danger-600 focus:ring-danger-600/20;
+    }
+
+    .textarea {
+        @apply min-h-[6rem] resize-y leading-relaxed;
+    }
+
+    .select {
+        @apply appearance-none bg-[length:1rem] bg-[right_0.75rem_center] bg-no-repeat pr-10;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+    }
+
+    .input-icon {
+        @apply pointer-events-none absolute top-1/2 -translate-y-1/2 text-slate-400;
+    }
+
+    .otp-input {
+        @apply text-center font-mono text-xl tracking-[0.5em];
+    }
+
+    /* Segmented role selector on the login screen. */
+    .role-option {
+        @apply relative flex flex-1 cursor-pointer items-center justify-center rounded-xl border border-slate-300 bg-white px-2 py-2.5 text-center text-sm font-medium text-slate-600 transition-colors hover:border-navy-300 hover:text-navy;
+    }
+
+    .role-option input {
+        @apply sr-only;
+    }
+
+    .role-option:has(input:checked) {
+        @apply border-navy bg-navy text-white shadow-sm;
+    }
+
+    .role-option:has(input:focus-visible) {
+        @apply ring-2 ring-navy-500 ring-offset-2;
+    }
+
+    /* 1–5 rating control inside the evaluation form. */
+    .rating-option {
+        @apply relative flex cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl border border-slate-200 bg-white py-2 text-sm font-bold text-slate-600 transition-colors hover:border-navy-300 hover:bg-navy-50;
+    }
+
+    .rating-option input {
+        @apply sr-only;
+    }
+
+    .rating-option:has(input:checked) {
+        @apply border-navy bg-navy text-white shadow-sm;
+    }
+
+    .rating-option:has(input:focus-visible) {
+        @apply ring-2 ring-navy-500 ring-offset-2;
+    }
+
+    .rating-option .rating-caption {
+        @apply text-[9px] font-medium uppercase tracking-wide opacity-70;
+    }
+
+    /* ------------------------------------------------- password strength meter */
+    .password-meter {
+        @apply mt-2 flex items-center gap-2.5;
+    }
+
+    .password-meter-track {
+        @apply h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100;
+    }
+
+    .password-meter-bar {
+        @apply h-full w-0 rounded-full bg-slate-300 transition-all duration-300;
+    }
+
+    .password-meter-label {
+        @apply w-24 shrink-0 text-right text-xs font-medium text-slate-400;
+    }
+
+    .password-meter[data-strength="1"] .password-meter-bar {
+        @apply w-1/4 bg-danger-600;
+    }
+
+    .password-meter[data-strength="2"] .password-meter-bar {
+        @apply w-2/4 bg-warning-600;
+    }
+
+    .password-meter[data-strength="3"] .password-meter-bar {
+        @apply w-3/4 bg-info-600;
+    }
+
+    .password-meter[data-strength="4"] .password-meter-bar {
+        @apply w-full bg-success-600;
+    }
+
+    .password-meter[data-strength="1"] .password-meter-label {
+        @apply text-danger-600;
+    }
+
+    .password-meter[data-strength="2"] .password-meter-label {
+        @apply text-warning-700;
+    }
+
+    .password-meter[data-strength="3"] .password-meter-label {
+        @apply text-info-700;
+    }
+
+    .password-meter[data-strength="4"] .password-meter-label {
+        @apply text-success-700;
+    }
+
+    .password-match {
+        @apply mt-1.5 text-xs font-medium;
+    }
+
+    .password-match[data-state="match"] {
+        @apply text-success-700;
+    }
+
+    .password-match[data-state="mismatch"] {
+        @apply text-danger-600;
+    }
+
+    /* ---------------------------------------------------------------- alerts */
+    .alert {
+        @apply flex items-start gap-3 rounded-xl border px-4 py-3 text-sm;
+    }
+
+    .alert-success {
+        @apply border-success-100 bg-success-50 text-success-700;
+    }
+
+    .alert-error {
+        @apply border-danger-100 bg-danger-50 text-danger-700;
+    }
+
+    .alert-warning {
+        @apply border-warning-100 bg-warning-50 text-warning-700;
+    }
+
+    .alert-info {
+        @apply border-info-100 bg-info-50 text-info-700;
+    }
+
+    /* ---------------------------------------------------------------- badges */
+    .badge {
+        @apply inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset;
+    }
+
+    .badge-neutral {
+        @apply bg-slate-100 text-slate-600 ring-slate-500/20;
+    }
+
+    .badge-success {
+        @apply bg-success-50 text-success-700 ring-success-600/20;
+    }
+
+    .badge-info {
+        @apply bg-info-50 text-info-700 ring-info-600/20;
+    }
+
+    .badge-warning {
+        @apply bg-warning-50 text-warning-700 ring-warning-600/20;
+    }
+
+    .badge-caution {
+        @apply bg-caution-50 text-caution-700 ring-caution-600/20;
+    }
+
+    .badge-danger {
+        @apply bg-danger-50 text-danger-700 ring-danger-600/20;
+    }
+
+    .badge-gold {
+        @apply bg-gold-100 text-gold-700 ring-gold-600/30;
+    }
+
+    /* --------------------------------------------------------------- tables */
+    .table-shell {
+        @apply overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card;
+    }
+
+    .data-table {
+        @apply w-full border-collapse text-left text-sm;
+    }
+
+    .data-table thead th {
+        @apply whitespace-nowrap bg-slate-50/80 px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500;
+    }
+
+    .data-table tbody td {
+        @apply px-5 py-3.5 align-middle text-slate-600;
+    }
+
+    .data-table tbody tr {
+        @apply border-t border-slate-100 transition-colors hover:bg-slate-50/70;
+    }
+
+    .data-table .cell-primary {
+        @apply whitespace-nowrap font-semibold text-slate-900;
+    }
+
+    .data-table .cell-muted {
+        @apply text-xs text-slate-500;
+    }
+
+    .table-caption {
+        @apply px-5 py-3 text-xs text-slate-500;
+    }
+
+    /* ----------------------------------------------------------- empty state */
+    .empty-state {
+        @apply flex flex-col items-center justify-center px-6 py-14 text-center;
+    }
+
+    .empty-state-icon {
+        @apply mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-400;
+    }
+
+    .empty-state-title {
+        @apply font-display text-base font-bold text-slate-800;
+    }
+
+    .empty-state-text {
+        @apply mx-auto mt-1 max-w-md text-sm text-slate-500;
+    }
+
+    /* ---------------------------------------------------------- filter pills */
+    .pill {
+        @apply inline-flex min-h-[2.5rem] items-center justify-center rounded-full border px-4 py-2 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-500 focus-visible:ring-offset-2;
+    }
+
+    .pill-active {
+        @apply border-navy bg-navy text-white shadow-sm;
+    }
+
+    .pill-inactive {
+        @apply border-slate-200 bg-white text-navy hover:border-navy-200 hover:bg-navy-50;
+    }
+
+    /* ---------------------------------------------------------------- modal */
+    .modal-backdrop {
+        @apply fixed inset-0 bg-slate-900/60 backdrop-blur-sm;
+    }
+
+    .modal-panel {
+        @apply relative z-10 flex max-h-[90vh] w-full flex-col rounded-2xl bg-white shadow-overlay;
+    }
+
+    .modal-header {
+        @apply flex shrink-0 items-start justify-between gap-4 rounded-t-2xl bg-navy px-5 py-4 text-white sm:px-6 sm:py-5;
+    }
+
+    .modal-title {
+        @apply font-display text-lg font-bold leading-snug sm:text-xl;
+    }
+
+    .modal-subtitle {
+        @apply mt-1 text-sm text-navy-100;
+    }
+
+    .modal-body {
+        @apply flex-1 overflow-y-auto px-5 py-5 sm:px-6 sm:py-6;
+    }
+
+    .modal-footer {
+        @apply flex shrink-0 flex-col-reverse gap-3 border-t border-slate-100 bg-slate-50/70 px-5 py-4 sm:flex-row sm:justify-end sm:px-6;
+    }
+
+    /* --------------------------------------------------------------- sidebar */
+    .sidebar-link {
+        @apply flex min-h-[2.75rem] items-center gap-3 border-l-[3px] border-transparent px-4 py-2.5 text-sm font-medium text-navy-100 transition-colors hover:bg-navy-600 hover:text-white focus:outline-none focus-visible:bg-navy-600 focus-visible:text-white focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gold-400;
+    }
+
+    .sidebar-link[aria-current="page"] {
+        @apply border-gold-500 bg-navy-600 text-white;
+    }
+
+    .sidebar-logout {
+        @apply flex min-h-[2.75rem] items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-red-300 transition-colors hover:bg-red-400/10 hover:text-red-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-300;
+    }
+
+    .mobile-topbar {
+        @apply fixed inset-x-0 top-0 z-40 flex items-center justify-between border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur md:hidden;
+    }
+
+    /* ------------------------------------------------------------ utilities */
+    .skip-link {
+        @apply sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[200] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2.5 focus:text-sm focus:font-semibold focus:text-navy focus:shadow-lg focus:ring-2 focus:ring-gold-500;
+    }
+
+    .divider {
+        @apply border-t border-slate-100;
+    }
+
+    .metric-track {
+        @apply h-2.5 overflow-hidden rounded-full bg-slate-100;
+    }
+
+    .metric-fill {
+        @apply h-full rounded-full transition-[width] duration-700 ease-out;
+    }
+
+    .skeleton {
+        @apply animate-pulse rounded-md bg-slate-200/70;
+    }
+
+    .auth-bg {
+        @apply fixed inset-0 z-0;
+    }
+
+    .auth-card {
+        @apply relative z-10 w-full rounded-[1.25rem] border border-slate-200 bg-white p-6 shadow-overlay sm:p-10;
+    }
+
+    .auth-logo {
+        @apply flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-sm ring-2 ring-navy-200 sm:h-20 sm:w-20;
+    }
+
+    .auth-rule {
+        @apply mx-auto mt-2 mb-2 h-[2px] w-[60px] rounded-full bg-gold-500;
+    }
+
+    .surface-panel {
+        @apply rounded-2xl border border-slate-200 bg-white p-5 shadow-card sm:p-6;
+    }
+
+    .subtle-panel {
+        @apply rounded-xl border border-slate-200 bg-slate-50/70 p-4;
+    }
+}
+
+/* --------------------------------------------------------------------------
+ * Scrollbars
+ * -------------------------------------------------------------------------- */
+.no-scrollbar,
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar,
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+
+.custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 9999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* --------------------------------------------------------------------------
+ * Motion
+ * -------------------------------------------------------------------------- */
+@keyframes fade-in-up {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes modal-in {
+    from {
+        opacity: 0;
+        transform: translateY(16px) scale(0.985);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.animate-fade-in-up {
+    animation: fade-in-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-modal-in {
+    animation: modal-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* --------------------------------------------------------------------------
+ * Print — reports are printed / saved as PDF
+ * -------------------------------------------------------------------------- */
+@media print {
+    #sidebar,
+    #sidebar-overlay,
+    .mobile-topbar,
+    .page-actions,
+    .no-print {
+        display: none !important;
+    }
+
+    .app-main,
+    main {
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    body {
+        background: #fff !important;
+    }
+
+    .card,
+    .table-shell {
+        border-color: #cbd5e1 !important;
+        box-shadow: none !important;
+        break-inside: avoid;
+    }
+
+    .data-table thead {
+        display: table-header-group;
+    }
+
+    a[href]::after {
+        content: "";
+    }
+}
+
+/* --------------------------------------------------------------------------
+ * Collapsible desktop sidebar ("minimizer").
+ *
+ * The collapsed state is a class on <html>, set by frontend/assets/js/sidebar.js
+ * (and remembered in localStorage), so the layout is driven entirely from here —
+ * no per-page <main> edits. Scoped to md+ so the mobile off-canvas drawer is
+ * unaffected. Specificity (the extra class / #sidebar id) outranks the
+ * Tailwind utilities (md:ml-64, w-64) without needing !important.
+ * -------------------------------------------------------------------------- */
+@media (min-width: 768px) {
+    #sidebar,
+    main {
+        transition: width 0.3s ease, margin-left 0.3s ease, transform 0.3s ease;
+    }
+
+    html.sidebar-collapsed #sidebar {
+        width: 5rem;
+    }
+
+    html.sidebar-collapsed main {
+        margin-left: 5rem;
+    }
+
+    html.sidebar-collapsed .sidebar-label {
+        display: none;
+    }
+
+    html.sidebar-collapsed .sidebar-brand,
+    html.sidebar-collapsed .sidebar-profile-row {
+        justify-content: center;
+    }
+
+    html.sidebar-collapsed .sidebar-brand,
+    html.sidebar-collapsed .sidebar-profile {
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+    html.sidebar-collapsed #sidebar nav a,
+    html.sidebar-collapsed .sidebar-logout {
+        justify-content: center;
+        gap: 0;
+        margin-left: 0;
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+    html.sidebar-collapsed .sidebar-collapse-btn {
+        margin-left: 0;
+    }
+
+    html.sidebar-collapsed .sidebar-collapse-icon {
+        transform: rotate(180deg);
+    }
+}
