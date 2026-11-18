@@ -616,8 +616,6 @@ export async function forgotPasswordAction(
   const { email } = parsed.data;
 
   // Look up user by their registered 2FA email.
-  // We intentionally give the same success message whether the user exists or
-  // not, to prevent user enumeration.
   const twoFactor = await prisma.user2fa.findFirst({
     where: {
       email: {
@@ -628,14 +626,28 @@ export async function forgotPasswordAction(
     include: { user: true },
   });
 
-  if (twoFactor?.user && twoFactor.user.status !== "inactive") {
-    const user = twoFactor.user;
-    const token = await createPasswordResetToken(user.id, user.password);
-    const minutes = Math.round(PASSWORD_RESET_TTL_SECONDS / 60);
+  if (!twoFactor?.user) {
+    return {
+      error: "No account found with this email address.",
+      values,
+    };
+  }
 
-    const baseUrl = await getBaseUrl();
-    const resetUrl = `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`;
+  if (twoFactor.user.status === "inactive") {
+    return {
+      error: "This account has been deactivated. Please contact an administrator.",
+      values,
+    };
+  }
 
+  const user = twoFactor.user;
+  const token = await createPasswordResetToken(user.id, user.password);
+  const minutes = Math.round(PASSWORD_RESET_TTL_SECONDS / 60);
+
+  const baseUrl = await getBaseUrl();
+  const resetUrl = `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`;
+
+  try {
     await sendMail({
       to: twoFactor.email ?? email,
       subject: `${APP_NAME} — Password Reset`,
@@ -662,14 +674,19 @@ export async function forgotPasswordAction(
         <p style="font-size:10px;color:#666">&copy; 2026 Andres Soriano Colleges of Bislig</p>
       `,
     });
-
-    logAudit("password_reset_requested", { userId: user.id, username: user.username });
+  } catch (mailError) {
+    logError("password_reset_email_failed", { userId: user.id, error: mailError });
+    return {
+      error: "Failed to send reset email. Please try again later.",
+      values,
+    };
   }
 
-  // Always show the same message to prevent user enumeration.
+  logAudit("password_reset_requested", { userId: user.id, username: user.username });
+
   return {
     notice:
-      "If an account with that email exists, a password reset link has been sent. Please check your inbox and spam folder.",
+      "A password reset link has been sent to your email. Please check your inbox and spam folder.",
   };
 }
 
