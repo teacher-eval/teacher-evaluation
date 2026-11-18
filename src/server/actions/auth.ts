@@ -556,7 +556,6 @@ export async function changeTwoFactorEmailAction(
 /* -------------------------------------------------------------------------- */
 
 const forgotPasswordSchema = z.object({
-  username: z.string().trim().min(1, "Enter your username.").max(50),
   email: z.email("Please enter a valid email address."),
 });
 
@@ -570,45 +569,49 @@ export async function forgotPasswordAction(
   }
 
   const parsed = forgotPasswordSchema.safeParse({
-    username: formData.get("username"),
     email: formData.get("email"),
   });
 
   const values = {
-    username: String(formData.get("username") ?? ""),
     email: String(formData.get("email") ?? ""),
   };
 
   if (!parsed.success) {
     return {
-      error: parsed.error.issues[0]?.message ?? "Please check the form and try again.",
+      error: parsed.error.issues[0]?.message ?? "Please enter a valid email address.",
       values,
     };
   }
 
-  const { username, email } = parsed.data;
+  const { email } = parsed.data;
 
-  // Look up user by username, then verify their 2FA email matches.
+  // Look up user by their registered 2FA email.
   // We intentionally give the same success message whether the user exists or
   // not, to prevent user enumeration.
-  const user = await prisma.user.findUnique({
-    where: { username },
-    include: { twoFactor: true },
+  const twoFactor = await prisma.user2fa.findFirst({
+    where: {
+      email: {
+        equals: email,
+        mode: "insensitive",
+      },
+    },
+    include: { user: true },
   });
 
-  if (user && user.twoFactor?.email?.toLowerCase() === email.toLowerCase()) {
+  if (twoFactor?.user && twoFactor.user.status !== "inactive") {
+    const user = twoFactor.user;
     const token = await createPasswordResetToken(user.id, user.password);
     const minutes = Math.round(PASSWORD_RESET_TTL_SECONDS / 60);
 
     const resetUrl = `${process.env.AUTH_URL ?? "http://localhost:3000"}/reset-password?token=${encodeURIComponent(token)}`;
 
     await sendMail({
-      to: email,
+      to: twoFactor.email ?? email,
       subject: `${APP_NAME} — Password Reset`,
       text: [
         `Hello ${user.fullName},`,
         "",
-        `You requested a password reset for your ${APP_NAME} account (${username}).`,
+        `You requested a password reset for your ${APP_NAME} account (${user.username}).`,
         "",
         `Click the link below to reset your password:`,
         resetUrl,
@@ -619,7 +622,7 @@ export async function forgotPasswordAction(
       ].join("\n"),
       html: `
         <h3>Hello ${escapeHtml(user.fullName)},</h3>
-        <p>You requested a password reset for your <strong>${escapeHtml(APP_NAME)}</strong> account (<strong>${escapeHtml(username)}</strong>).</p>
+        <p>You requested a password reset for your <strong>${escapeHtml(APP_NAME)}</strong> account (<strong>${escapeHtml(user.username)}</strong>).</p>
         <p><a href="${escapeHtml(resetUrl)}" style="display:inline-block;padding:12px 24px;background:#1e3a5f;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Reset Password</a></p>
         <p style="margin-top:16px;font-size:13px;color:#555">Or copy this link into your browser:<br/><code>${escapeHtml(resetUrl)}</code></p>
         <p>This link expires in ${minutes} minutes.</p>
@@ -629,13 +632,13 @@ export async function forgotPasswordAction(
       `,
     });
 
-    logAudit("password_reset_requested", { userId: user.id, username });
+    logAudit("password_reset_requested", { userId: user.id, username: user.username });
   }
 
   // Always show the same message to prevent user enumeration.
   return {
     notice:
-      "If an account with that username and email exists, a password reset link has been sent. Please check your inbox and spam folder.",
+      "If an account with that email exists, a password reset link has been sent. Please check your inbox and spam folder.",
   };
 }
 

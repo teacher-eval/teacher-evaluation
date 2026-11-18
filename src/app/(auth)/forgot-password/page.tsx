@@ -17,7 +17,7 @@ export default async function ForgotPasswordPage() {
       <div className="auth-card">
         <AuthHeader
           title="Forgot Password"
-          subtitle="Enter your username and email to receive a reset link"
+          subtitle="Enter your email to receive a password reset link"
           note="ASCB • TVET Department"
         />
         <ForgotPasswordForm />

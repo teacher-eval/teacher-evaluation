@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useActionState } from "react";
 
 import { AuthAlert, AuthNotice } from "@/components/auth/auth-shell";
-import { MailIcon, UserIcon } from "@/components/icons";
+import { MailIcon } from "@/components/icons";
 import { forgotPasswordAction, type AuthFormState } from "@/server/actions/auth";
 
 const initialState: AuthFormState = {};
@@ -35,27 +35,6 @@ export function ForgotPasswordForm() {
       {state.error ? <AuthAlert message={state.error} /> : null}
 
       <form action={formAction} className="space-y-4">
-        <div>
-          <label htmlFor="username" className="field-label">
-            Username
-          </label>
-          <div className="relative">
-            <span className="input-icon left-3.5">
-              <UserIcon className="h-4 w-4" />
-            </span>
-            <input
-              type="text"
-              id="username"
-              name="username"
-              defaultValue={values.username ?? ""}
-              className="input pl-10"
-              required
-              autoComplete="username"
-              placeholder="Enter your username"
-            />
-          </div>
-        </div>
-
         <div>
           <label htmlFor="email" className="field-label">
             Email address
