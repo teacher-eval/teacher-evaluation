@@ -124,6 +124,10 @@ export async function enforceEmailResendLimit(challengeId: string): Promise<Rate
   return rateLimit(`2fa_resend_${challengeId}`, 3, 60);
 }
 
+export async function enforcePasswordResetLimit(): Promise<RateLimitResult> {
+  return rateLimit(`pwd_reset_${await clientIp()}`, 5, 300);
+}
+
 export async function pruneRateLimits(): Promise<void> {
   try {
     const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);

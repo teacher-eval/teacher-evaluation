@@ -16,11 +16,16 @@ export function RegisterForm({ courses }: { courses: Course[] }) {
   const [state, formAction, pending] = useActionState(registerAction, initialState);
   const values = state.values ?? {};
 
+  // Stable key that only changes on a successful submission (state has no
+  // values and no error), preventing React from remounting uncontrolled
+  // inputs and wiping what the student typed.
+  const formKey = state.error ? "retry" : "fresh";
+
   return (
     <>
       {state.error ? <AuthAlert message={state.error} /> : null}
 
-      <form action={formAction} className="space-y-4">
+      <form action={formAction} className="space-y-4" key={formKey}>
         <div>
           <label htmlFor="full_name" className="field-label">
             Full name
@@ -133,6 +138,7 @@ export function RegisterForm({ courses }: { courses: Course[] }) {
           placeholder="At least 8 characters"
           showMeter
           hint="Use at least 8 characters. Longer passwords with mixed characters are stronger."
+          defaultValue={values.password ?? ""}
         />
 
         <PasswordField
@@ -140,7 +146,30 @@ export function RegisterForm({ courses }: { courses: Course[] }) {
           label="Confirm password"
           autoComplete="new-password"
           placeholder="Re-enter your password"
+          defaultValue={values.confirm_password ?? ""}
         />
+
+        <div className="flex items-start gap-2.5">
+          <input
+            type="checkbox"
+            id="agree_terms"
+            name="agree_terms"
+            required
+            defaultChecked={values.agree_terms === "on"}
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-navy focus:ring-navy-500"
+          />
+          <label htmlFor="agree_terms" className="text-xs leading-relaxed text-slate-600">
+            I have read and agree to the{" "}
+            <Link
+              href="/terms"
+              target="_blank"
+              className="font-semibold text-navy underline-offset-2 hover:underline"
+            >
+              Terms of Service and Data Privacy Notice
+            </Link>{" "}
+            in compliance with RA 10173 (Data Privacy Act of 2012).
+          </label>
+        </div>
 
         <button type="submit" className="btn btn-primary btn-lg mt-2 w-full" disabled={pending}>
           {pending ? "Creating account…" : "Create account"}

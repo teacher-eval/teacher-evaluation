@@ -8,15 +8,23 @@ import type { UserRole } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/db";
 import { logAudit, logError, logSecurity } from "@/lib/logger";
 import { homeForRole } from "@/lib/nav";
+import { APP_NAME } from "@/lib/env";
+import { sendMail } from "@/lib/mail";
 import {
   clientIp,
   enforceEmailResendLimit,
   enforceLoginLimit,
+  enforcePasswordResetLimit,
   enforceRegisterLimit,
   enforceTwoFactorLimit,
   pruneRateLimits,
 } from "@/lib/rate-limit";
-import { createLoginToken } from "@/lib/tokens";
+import {
+  createLoginToken,
+  createPasswordResetToken,
+  PASSWORD_RESET_TTL_SECONDS,
+  verifyPasswordResetToken,
+} from "@/lib/tokens";
 import {
   generateEmailCode,
   hashOtp,
@@ -370,11 +378,21 @@ export async function registerAction(
     email: String(formData.get("email") ?? ""),
     course: String(formData.get("course") ?? ""),
     year_level: String(formData.get("year_level") ?? ""),
+    password: String(formData.get("password") ?? ""),
+    confirm_password: String(formData.get("confirm_password") ?? ""),
+    agree_terms: String(formData.get("agree_terms") ?? ""),
   };
 
   if (!parsed.success) {
     return {
       error: parsed.error.issues[0]?.message ?? "Please check the form and try again.",
+      values,
+    };
+  }
+
+  if (formData.get("agree_terms") !== "on") {
+    return {
+      error: "You must agree to the Terms of Service and Data Privacy Notice to create an account.",
       values,
     };
   }
@@ -447,8 +465,16 @@ export async function registerAction(
   );
 
   if (!started.ok) {
+    // Roll back the freshly created user so the student can retry with the
+    // same username/email instead of getting "already taken" errors.
+    // The Student and User2fa rows cascade-delete with the User.
+    await prisma.user.delete({ where: { id: user.id } }).catch(() => {});
     return {
-      error: "Your account was created, but we could not send the verification code. Please sign in to try again.",
+      error:
+        started.reason === "send_failed"
+          ? "We could not send the verification code to that email address. Please double-check it and try again."
+          : "Registration failed — email verification could not be set up. Please try again.",
+      values,
     };
   }
 
@@ -523,6 +549,181 @@ export async function changeTwoFactorEmailAction(
 
   logAudit("2fa_email_changed", { userId: challenge.userId });
   redirect("/verify-2fa");
+}
+
+/* -------------------------------------------------------------------------- */
+/* Forgot Password                                                            */
+/* -------------------------------------------------------------------------- */
+
+const forgotPasswordSchema = z.object({
+  username: z.string().trim().min(1, "Enter your username.").max(50),
+  email: z.email("Please enter a valid email address."),
+});
+
+export async function forgotPasswordAction(
+  _prev: AuthFormState,
+  formData: FormData,
+): Promise<AuthFormState> {
+  const limit = await enforcePasswordResetLimit();
+  if (!limit.allowed) {
+    return { error: "Too many requests. Please wait a few minutes and try again." };
+  }
+
+  const parsed = forgotPasswordSchema.safeParse({
+    username: formData.get("username"),
+    email: formData.get("email"),
+  });
+
+  const values = {
+    username: String(formData.get("username") ?? ""),
+    email: String(formData.get("email") ?? ""),
+  };
+
+  if (!parsed.success) {
+    return {
+      error: parsed.error.issues[0]?.message ?? "Please check the form and try again.",
+      values,
+    };
+  }
+
+  const { username, email } = parsed.data;
+
+  // Look up user by username, then verify their 2FA email matches.
+  // We intentionally give the same success message whether the user exists or
+  // not, to prevent user enumeration.
+  const user = await prisma.user.findUnique({
+    where: { username },
+    include: { twoFactor: true },
+  });
+
+  if (user && user.twoFactor?.email?.toLowerCase() === email.toLowerCase()) {
+    const token = await createPasswordResetToken(user.id, user.password);
+    const minutes = Math.round(PASSWORD_RESET_TTL_SECONDS / 60);
+
+    const resetUrl = `${process.env.AUTH_URL ?? "http://localhost:3000"}/reset-password?token=${encodeURIComponent(token)}`;
+
+    await sendMail({
+      to: email,
+      subject: `${APP_NAME} — Password Reset`,
+      text: [
+        `Hello ${user.fullName},`,
+        "",
+        `You requested a password reset for your ${APP_NAME} account (${username}).`,
+        "",
+        `Click the link below to reset your password:`,
+        resetUrl,
+        "",
+        `This link expires in ${minutes} minutes.`,
+        "",
+        "If you did not request this, you can safely ignore this email.",
+      ].join("\n"),
+      html: `
+        <h3>Hello ${escapeHtml(user.fullName)},</h3>
+        <p>You requested a password reset for your <strong>${escapeHtml(APP_NAME)}</strong> account (<strong>${escapeHtml(username)}</strong>).</p>
+        <p><a href="${escapeHtml(resetUrl)}" style="display:inline-block;padding:12px 24px;background:#1e3a5f;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Reset Password</a></p>
+        <p style="margin-top:16px;font-size:13px;color:#555">Or copy this link into your browser:<br/><code>${escapeHtml(resetUrl)}</code></p>
+        <p>This link expires in ${minutes} minutes.</p>
+        <p>If you did not request this, you can safely ignore this email.</p>
+        <hr>
+        <p style="font-size:10px;color:#666">&copy; 2026 Andres Soriano Colleges of Bislig</p>
+      `,
+    });
+
+    logAudit("password_reset_requested", { userId: user.id, username });
+  }
+
+  // Always show the same message to prevent user enumeration.
+  return {
+    notice:
+      "If an account with that username and email exists, a password reset link has been sent. Please check your inbox and spam folder.",
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Reset Password                                                             */
+/* -------------------------------------------------------------------------- */
+
+const resetPasswordSchema = z
+  .object({
+    token: z.string().min(1, "Invalid reset link."),
+    password: z.string().min(8, "Password must be at least 8 characters."),
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords do not match.",
+    path: ["confirmPassword"],
+  });
+
+export async function resetPasswordAction(
+  _prev: AuthFormState,
+  formData: FormData,
+): Promise<AuthFormState> {
+  const limit = await enforcePasswordResetLimit();
+  if (!limit.allowed) {
+    return { error: "Too many requests. Please wait a few minutes and try again." };
+  }
+
+  const parsed = resetPasswordSchema.safeParse({
+    token: formData.get("token"),
+    password: formData.get("password"),
+    confirmPassword: formData.get("confirm_password"),
+  });
+
+  if (!parsed.success) {
+    return {
+      error: parsed.error.issues[0]?.message ?? "Please check the form and try again.",
+    };
+  }
+
+  const { token, password } = parsed.data;
+
+  const verified = await verifyPasswordResetToken(token);
+  if (!verified) {
+    return { error: "This reset link has expired or is invalid. Please request a new one." };
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: verified.userId },
+    select: { id: true, username: true, status: true, password: true },
+  });
+
+  if (!user) {
+    return { error: "This reset link has expired or is invalid. Please request a new one." };
+  }
+
+  // The token embeds a fingerprint of the password hash at the time it was
+  // created. If the password has already been changed since (by another reset
+  // or by the user), the fingerprint will not match, making the link single-use.
+  if (user.password.slice(-10) !== verified.fingerprint) {
+    return { error: "This reset link has already been used. Please request a new one." };
+  }
+
+  if (user.status === "inactive") {
+    return { error: "This account is inactive. Please contact the administrator." };
+  }
+
+  const passwordHash = await hashPassword(password);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { password: passwordHash },
+  });
+
+  logAudit("password_reset_completed", { userId: user.id, username: user.username });
+
+  return {
+    notice:
+      "Your password has been reset successfully. You can now sign in with your new password.",
+  };
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 /* -------------------------------------------------------------------------- */

@@ -65,3 +65,41 @@ export async function readChallengeCookie(token: string): Promise<string | null>
     return null;
   }
 }
+
+export const PASSWORD_RESET_TTL_SECONDS = 15 * 60; // 15 minutes
+
+export async function createPasswordResetToken(
+  userId: number,
+  passwordHash: string,
+): Promise<string> {
+  const fingerprint = passwordHash.slice(-10);
+  return new SignJWT({ purpose: "password_reset", fp: fingerprint })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(String(userId))
+    .setIssuedAt()
+    .setExpirationTime(`${PASSWORD_RESET_TTL_SECONDS}s`)
+    .sign(secretKey());
+}
+
+export type VerifiedResetToken = {
+  userId: number;
+  fingerprint: string;
+};
+
+export async function verifyPasswordResetToken(
+  token: string,
+): Promise<VerifiedResetToken | null> {
+  try {
+    const { payload } = await jwtVerify(token, secretKey(), {
+      algorithms: ["HS256"],
+    });
+    if (payload.purpose !== "password_reset" || !payload.sub || typeof payload.fp !== "string") {
+      return null;
+    }
+    const id = Number(payload.sub);
+    if (!Number.isInteger(id) || id <= 0) return null;
+    return { userId: id, fingerprint: payload.fp };
+  } catch {
+    return null;
+  }
+}

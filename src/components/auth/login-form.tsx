@@ -72,6 +72,15 @@ export function LoginForm() {
           placeholder="Enter your password"
         />
 
+        <div className="flex justify-end">
+          <Link
+            href="/forgot-password"
+            className="text-xs font-medium text-navy underline-offset-2 hover:underline"
+          >
+            Forgot password?
+          </Link>
+        </div>
+
         <button type="submit" className="btn btn-primary btn-lg w-full" disabled={pending}>
           {pending ? "Signing in…" : "Sign in"}
         </button>
