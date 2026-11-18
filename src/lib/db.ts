@@ -32,8 +32,7 @@ function createPrismaClient(): PrismaClient {
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
-}
+// Keep the client on globalThis across serverless warm invocations and dev reloads
+globalForPrisma.prisma = prisma;
 
 export type { PrismaClient };

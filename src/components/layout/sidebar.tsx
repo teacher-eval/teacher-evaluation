@@ -198,6 +198,7 @@ export function Sidebar({ user, nav, signOut }: SidebarProps) {
             <Link
               key={item.key}
               href={item.href}
+              prefetch={true}
               className="sidebar-link"
               aria-current={isActive(pathname, item, nav) ? "page" : undefined}
               onClick={() => setDrawer(false)}

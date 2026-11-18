@@ -49,23 +49,25 @@ export async function getStudentList({
       : {}),
   };
 
-  const totalRecords = await prisma.user.count({ where });
+  const [totalRecords, users] = await Promise.all([
+    prisma.user.count({ where }),
+    prisma.user.findMany({
+      where,
+      orderBy: { fullName: "asc" },
+      skip: Math.max(0, (requestedPage - 1) * STUDENTS_PER_PAGE),
+      take: STUDENTS_PER_PAGE,
+      select: {
+        id: true,
+        username: true,
+        fullName: true,
+        status: true,
+        student: { select: { course: true, yearLevel: true } },
+      },
+    }),
+  ]);
+
   const totalPages = Math.max(1, Math.ceil(totalRecords / STUDENTS_PER_PAGE));
   const page = Math.min(Math.max(1, requestedPage), totalPages);
-
-  const users = await prisma.user.findMany({
-    where,
-    orderBy: { fullName: "asc" },
-    skip: (page - 1) * STUDENTS_PER_PAGE,
-    take: STUDENTS_PER_PAGE,
-    select: {
-      id: true,
-      username: true,
-      fullName: true,
-      status: true,
-      student: { select: { course: true, yearLevel: true } },
-    },
-  });
 
   return {
     rows: users.map((user) => ({

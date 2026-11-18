@@ -50,37 +50,39 @@ export async function getTeacherList({
       : {}),
   };
 
-  const totalRecords = await prisma.user.count({ where });
-  const totalPages = Math.max(1, Math.ceil(totalRecords / TEACHERS_PER_PAGE));
-  const page = Math.min(Math.max(1, requestedPage), totalPages);
-
-  const users = await prisma.user.findMany({
-    where,
-    orderBy: { fullName: "asc" },
-    skip: (page - 1) * TEACHERS_PER_PAGE,
-    take: TEACHERS_PER_PAGE,
-    select: {
-      id: true,
-      username: true,
-      fullName: true,
-      status: true,
-      teacher: {
-        select: {
-          id: true,
-          profileImage: true,
-          subjects: {
-            select: {
-              id: true,
-              subjectName: true,
-              course: true,
-              yearLevel: true,
+  const [totalRecords, users] = await Promise.all([
+    prisma.user.count({ where }),
+    prisma.user.findMany({
+      where,
+      orderBy: { fullName: "asc" },
+      skip: Math.max(0, (requestedPage - 1) * TEACHERS_PER_PAGE),
+      take: TEACHERS_PER_PAGE,
+      select: {
+        id: true,
+        username: true,
+        fullName: true,
+        status: true,
+        teacher: {
+          select: {
+            id: true,
+            profileImage: true,
+            subjects: {
+              select: {
+                id: true,
+                subjectName: true,
+                course: true,
+                yearLevel: true,
+              },
+              orderBy: [{ subjectName: "asc" }, { id: "asc" }],
             },
-            orderBy: [{ subjectName: "asc" }, { id: "asc" }],
           },
         },
       },
-    },
-  });
+    }),
+  ]);
+
+  const totalPages = Math.max(1, Math.ceil(totalRecords / TEACHERS_PER_PAGE));
+  const page = Math.min(Math.max(1, requestedPage), totalPages);
 
   return {
     rows: users.map((user) => ({
