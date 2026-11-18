@@ -11,6 +11,7 @@ import { getAdminDashboard } from "@/server/queries/admin-dashboard";
 
 export const metadata: Metadata = { title: "Admin Dashboard" };
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const QUICK_ACTIONS = [
   {

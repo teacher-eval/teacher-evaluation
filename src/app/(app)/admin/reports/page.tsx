@@ -20,6 +20,7 @@ import {
 
 export const metadata: Metadata = { title: "Evaluation Reports" };
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type SearchParams = Promise<{ period?: string | string[] }>;
 

@@ -12,6 +12,7 @@ import { getTeacherDashboard } from "@/server/queries/teacher-dashboard";
 
 export const metadata: Metadata = { title: "Teacher Dashboard" };
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type SearchParams = Promise<{ subject?: string | string[] }>;
 

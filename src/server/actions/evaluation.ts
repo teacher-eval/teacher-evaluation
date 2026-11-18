@@ -173,6 +173,9 @@ export async function submitEvaluationAction(
   }
 
   revalidatePath("/student");
+  revalidatePath("/admin/reports");
+  revalidatePath("/admin");
+  revalidatePath("/teacher");
   return { ok: true, message: "Evaluation submitted successfully." };
 }
 

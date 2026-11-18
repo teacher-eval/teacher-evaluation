@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useEffect, useTransition } from "react";
 
 /**
  * Interactive bits of the reports page: the auto-submitting period picker and
@@ -55,8 +56,51 @@ export function PeriodFilter({
 }
 
 export function ReportActions({ exportHref }: { exportHref: string }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+
+  // Auto-refresh when switching back to this window or tab
+  useEffect(() => {
+    function onFocus() {
+      startTransition(() => {
+        router.refresh();
+      });
+    }
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [router]);
+
+  function handleRefresh() {
+    startTransition(() => {
+      router.refresh();
+    });
+  }
+
   return (
     <div className="no-print ml-auto flex items-center gap-2">
+      <button
+        type="button"
+        onClick={handleRefresh}
+        disabled={isPending}
+        className="btn btn-secondary btn-sm text-slate-700 hover:bg-slate-100"
+        title="Refresh latest evaluation data"
+      >
+        <svg
+          className={`h-4 w-4 ${isPending ? "animate-spin text-navy" : "text-slate-500"}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+          />
+        </svg>
+        <span>{isPending ? "Refreshing..." : "Refresh"}</span>
+      </button>
       <a
         href={exportHref}
         download
