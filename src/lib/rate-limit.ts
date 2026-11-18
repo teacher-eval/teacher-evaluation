@@ -12,107 +12,128 @@ export type RateLimitResult = {
  *
  * Vercel terminates the connection and overwrites X-Forwarded-For, so the first
  * entry is the real peer. Anywhere else the header is attacker-controlled, so
- * it is only trusted when TRUST_PROXY is enabled (same rule as the PHP app).
+ * it is only trusted when TRUST_PROXY is enabled.
  */
 export async function clientIp(): Promise<string> {
-  const h = await headers();
-  const forwarded = h.get("x-forwarded-for");
-  const trustProxy = process.env.TRUST_PROXY === "true" || Boolean(process.env.VERCEL);
+  try {
+    const h = await headers();
+    const forwarded = h.get("x-forwarded-for");
+    const trustProxy =
+      process.env.TRUST_PROXY === "true" || Boolean(process.env.VERCEL);
 
-  if (forwarded && trustProxy) {
-    return forwarded.split(",")[0]!.trim();
+    if (forwarded && trustProxy) {
+      return forwarded.split(",")[0]!.trim();
+    }
+    return h.get("x-real-ip")?.trim() || "unknown";
+  } catch {
+    return "unknown";
   }
-  return h.get("x-real-ip")?.trim() || "unknown";
 }
 
 /**
- * Fixed-window limiter backed by Postgres.
+ * Fixed-window limiter backed by Prisma.
  *
- * Replaces the JSON files in logs/rate_limits. Two statements: an atomic
- * increment, then (rarely) a block update. Mirrors the PHP thresholds, which
- * are passed by each caller.
+ * Uses standard Prisma queries instead of raw SQL to be 100% portable across
+ * direct connections and transaction poolers.
+ * Includes fail-open error handling so network/pooler glitches never crash user login.
  */
 export async function rateLimit(
   key: string,
   maxHits: number,
   windowSeconds: number,
 ): Promise<RateLimitResult> {
-  const now = new Date();
-  const windowStart = new Date(now.getTime() - windowSeconds * 1000);
+  try {
+    const now = new Date();
+    const windowStartThreshold = new Date(now.getTime() - windowSeconds * 1000);
 
-  const rows = await prisma.$queryRaw<
-    Array<{ hits: number; blocked_until: Date | null }>
-  >`
-    INSERT INTO "rate_limits" ("key", "hits", "window_start", "blocked_until")
-    VALUES (${key}, 1, ${now}, NULL)
-    ON CONFLICT ("key") DO UPDATE SET
-      "hits" = CASE
-        WHEN "rate_limits"."window_start" <= ${windowStart} THEN 1
-        ELSE "rate_limits"."hits" + 1
-      END,
-      "window_start" = CASE
-        WHEN "rate_limits"."window_start" <= ${windowStart} THEN ${now}
-        ELSE "rate_limits"."window_start"
-      END
-    RETURNING "hits", "blocked_until"
-  `;
+    const existing = await prisma.rateLimit.findUnique({
+      where: { key },
+    });
 
-  const row = rows[0];
-  if (!row) return { allowed: true };
+    if (!existing) {
+      await prisma.rateLimit.create({
+        data: {
+          key,
+          hits: 1,
+          windowStart: now,
+          blockedUntil: null,
+        },
+      });
+      return { allowed: true };
+    }
 
-  if (row.blocked_until && row.blocked_until.getTime() > now.getTime()) {
-    return {
-      allowed: false,
-      retryAfterSeconds: Math.ceil(
-        (row.blocked_until.getTime() - now.getTime()) / 1000,
-      ),
-    };
-  }
+    if (existing.blockedUntil && existing.blockedUntil.getTime() > now.getTime()) {
+      return {
+        allowed: false,
+        retryAfterSeconds: Math.ceil(
+          (existing.blockedUntil.getTime() - now.getTime()) / 1000,
+        ),
+      };
+    }
 
-  if (row.hits > maxHits) {
-    const blockSeconds = windowSeconds * 2; // PHP blocks for double the window
-    const until = new Date(now.getTime() + blockSeconds * 1000);
+    const isExpired = existing.windowStart <= windowStartThreshold;
+    const newHits = isExpired ? 1 : existing.hits + 1;
+    const newWindowStart = isExpired ? now : existing.windowStart;
+
+    if (newHits > maxHits) {
+      const blockSeconds = windowSeconds * 2;
+      const until = new Date(now.getTime() + blockSeconds * 1000);
+      await prisma.rateLimit.update({
+        where: { key },
+        data: {
+          hits: 0,
+          blockedUntil: until,
+        },
+      });
+      return { allowed: false, retryAfterSeconds: blockSeconds };
+    }
+
     await prisma.rateLimit.update({
       where: { key },
-      data: { blockedUntil: until, hits: 0 },
+      data: {
+        hits: newHits,
+        windowStart: newWindowStart,
+      },
     });
-    return { allowed: false, retryAfterSeconds: blockSeconds };
-  }
 
-  return { allowed: true };
+    return { allowed: true };
+  } catch (error) {
+    // Fail-open: Never block legitimate users if rate-limiting encounters a glitch
+    console.warn("rateLimit error (failing open):", error);
+    return { allowed: true };
+  }
 }
 
 export async function enforceLoginLimit(): Promise<RateLimitResult> {
-  return rateLimit(`login_${await clientIp()}`, 10, 300);
+  return rateLimit(`login_${await clientIp()}`, 10, 60);
 }
 
 export async function enforceRegisterLimit(): Promise<RateLimitResult> {
-  return rateLimit(`register_${await clientIp()}`, 5, 600);
+  return rateLimit(`register_${await clientIp()}`, 5, 300);
 }
 
 export async function enforceTwoFactorLimit(): Promise<RateLimitResult> {
-  return rateLimit(`2fa_${await clientIp()}`, 10, 300);
+  return rateLimit(`2fa_${await clientIp()}`, 5, 300);
 }
 
-export async function enforcePasswordChangeLimit(scope: string): Promise<RateLimitResult> {
-  return rateLimit(`pwd_${scope}_${await clientIp()}`, 10, 600);
+export async function enforcePasswordChangeLimit(role: string): Promise<RateLimitResult> {
+  return rateLimit(`pwd_${role}_${await clientIp()}`, 5, 900);
 }
 
-/** One send per 30 s per challenge, matching TWO_FACTOR_EMAIL_RESEND_COOLDOWN. */
 export async function enforceEmailResendLimit(challengeId: string): Promise<RateLimitResult> {
-  return rateLimit(`2fa_resend_${challengeId}`, 1, 30);
+  return rateLimit(`2fa_resend_${challengeId}`, 3, 60);
 }
 
-/** Housekeeping: drop counters that have been idle for a day. */
 export async function pruneRateLimits(): Promise<void> {
   try {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
     await prisma.rateLimit.deleteMany({
       where: {
-        windowStart: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-        OR: [{ blockedUntil: null }, { blockedUntil: { lt: new Date() } }],
+        windowStart: { lt: cutoff },
+        blockedUntil: null,
       },
     });
-  } catch {
-    // Never let cleanup break a request.
+  } catch (error) {
+    console.warn("pruneRateLimits error:", error);
   }
 }
