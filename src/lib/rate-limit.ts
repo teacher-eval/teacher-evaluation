@@ -35,11 +35,12 @@ export async function clientIp(): Promise<string | null> {
 }
 
 /**
- * Fixed-window limiter backed by Prisma.
+ * Fixed-window limiter backed by Postgres.
  *
- * Uses standard Prisma queries instead of raw SQL to be 100% portable across
- * direct connections and transaction poolers.
- * Includes fail-open error handling so network/pooler glitches never crash user login.
+ * Each key owns a row that is inserted on first use and then locked with
+ * `SELECT … FOR UPDATE`, so concurrent requests for the same key cannot read
+ * the same counter and overwrite each other's increment. Includes fail-open
+ * error handling so network/pooler glitches never crash user login.
  */
 export async function rateLimit(
   key: string,
@@ -50,57 +51,55 @@ export async function rateLimit(
     const now = new Date();
     const windowStartThreshold = new Date(now.getTime() - windowSeconds * 1000);
 
-    const existing = await prisma.rateLimit.findUnique({
-      where: { key },
-    });
+    return await prisma.$transaction(async (tx) => {
+      // First hit for this key. ON CONFLICT makes simultaneous first hits safe.
+      await tx.$executeRaw`
+        INSERT INTO "rate_limits" ("key", "hits", "window_start", "blocked_until")
+        VALUES (${key}, 0, ${now}, NULL)
+        ON CONFLICT ("key") DO NOTHING`;
 
-    if (!existing) {
-      await prisma.rateLimit.create({
-        data: {
-          key,
-          hits: 1,
-          windowStart: now,
-          blockedUntil: null,
-        },
-      });
+      const rows = await tx.$queryRaw<
+        { hits: number; window_start: Date; blocked_until: Date | null }[]
+      >`
+        SELECT "hits", "window_start", "blocked_until"
+        FROM "rate_limits"
+        WHERE "key" = ${key}
+        FOR UPDATE`;
+
+      const row = rows[0];
+      if (!row) return { allowed: true };
+
+      if (row.blocked_until && row.blocked_until.getTime() > now.getTime()) {
+        return {
+          allowed: false,
+          retryAfterSeconds: Math.ceil(
+            (row.blocked_until.getTime() - now.getTime()) / 1000,
+          ),
+        };
+      }
+
+      const isExpired = row.window_start <= windowStartThreshold;
+      const newHits = isExpired ? 1 : row.hits + 1;
+      const newWindowStart = isExpired ? now : row.window_start;
+
+      if (newHits > maxHits) {
+        const blockSeconds = windowSeconds * 2;
+        const until = new Date(now.getTime() + blockSeconds * 1000);
+        await tx.$executeRaw`
+          UPDATE "rate_limits"
+          SET "hits" = 0, "window_start" = ${newWindowStart}, "blocked_until" = ${until}
+          WHERE "key" = ${key}`;
+        return { allowed: false, retryAfterSeconds: blockSeconds };
+      }
+
+      // Clearing blocked_until keeps the row prunable once the block expires.
+      await tx.$executeRaw`
+        UPDATE "rate_limits"
+        SET "hits" = ${newHits}, "window_start" = ${newWindowStart}, "blocked_until" = NULL
+        WHERE "key" = ${key}`;
+
       return { allowed: true };
-    }
-
-    if (existing.blockedUntil && existing.blockedUntil.getTime() > now.getTime()) {
-      return {
-        allowed: false,
-        retryAfterSeconds: Math.ceil(
-          (existing.blockedUntil.getTime() - now.getTime()) / 1000,
-        ),
-      };
-    }
-
-    const isExpired = existing.windowStart <= windowStartThreshold;
-    const newHits = isExpired ? 1 : existing.hits + 1;
-    const newWindowStart = isExpired ? now : existing.windowStart;
-
-    if (newHits > maxHits) {
-      const blockSeconds = windowSeconds * 2;
-      const until = new Date(now.getTime() + blockSeconds * 1000);
-      await prisma.rateLimit.update({
-        where: { key },
-        data: {
-          hits: 0,
-          blockedUntil: until,
-        },
-      });
-      return { allowed: false, retryAfterSeconds: blockSeconds };
-    }
-
-    await prisma.rateLimit.update({
-      where: { key },
-      data: {
-        hits: newHits,
-        windowStart: newWindowStart,
-      },
     });
-
-    return { allowed: true };
   } catch (error) {
     // Fail-open: Never block legitimate users if rate-limiting encounters a glitch
     console.warn("rateLimit error (failing open):", error);
@@ -139,6 +138,21 @@ export async function enforceLoginLimit(username: string): Promise<RateLimitResu
   const ip = await clientIp();
   if (!ip) return account;
   return rateLimit(`login_${ip}`, 30, 60);
+}
+
+/**
+ * Clears the per-account login counter after a successful password check.
+ * The IP bucket is left alone on purpose: it exists to slow down an attacker
+ * trying many accounts from one address.
+ */
+export async function resetLoginLimit(username: string): Promise<void> {
+  try {
+    await prisma.rateLimit.delete({
+      where: { key: `login_user_${username.trim().toLowerCase()}` },
+    });
+  } catch {
+    // No counter for this account (normal), or a transient DB error.
+  }
 }
 
 export async function enforceRegisterLimit(): Promise<RateLimitResult> {
@@ -180,8 +194,12 @@ export async function pruneRateLimits(): Promise<void> {
     const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
     await prisma.rateLimit.deleteMany({
       where: {
-        windowStart: { lt: cutoff },
-        blockedUntil: null,
+        OR: [
+          // Idle windows.
+          { windowStart: { lt: cutoff }, blockedUntil: null },
+          // Blocks that expired long enough ago to be irrelevant.
+          { blockedUntil: { lt: new Date() } },
+        ],
       },
     });
   } catch (error) {

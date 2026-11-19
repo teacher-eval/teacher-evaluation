@@ -20,6 +20,7 @@ import {
   enforceTwoFactorLimit,
   pruneAuthChallenges,
   pruneRateLimits,
+  resetLoginLimit,
 } from "@/lib/rate-limit";
 import {
   createLoginToken,
@@ -141,6 +142,20 @@ export async function loginAction(
 
   if (user.status !== "active" && user.status !== "pending_2fa") {
     return { error: "This account is inactive. Please contact the administrator." };
+  }
+
+  // A successful password check should not count against the account's own
+  // failed-attempt budget. Only the account bucket is cleared; the IP bucket
+  // stays in place to slow down attempts against many accounts.
+  await resetLoginLimit(username);
+  if (user.role === "teacher" && user.status === "pending_2fa") {
+    // Teachers never use the 2FA challenge (legacy rule). A row left in
+    // pending_2fa by an older import would otherwise get a session that the
+    // JWT callback revokes on the very next request.
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { status: "active" },
+    });
   }
 
   // Brand-new accounts must verify once to activate. After that, any account
@@ -408,8 +423,6 @@ export async function registerAction(
     email: String(formData.get("email") ?? ""),
     course: String(formData.get("course") ?? ""),
     year_level: String(formData.get("year_level") ?? ""),
-    password: String(formData.get("password") ?? ""),
-    confirm_password: String(formData.get("confirm_password") ?? ""),
     agree_terms: String(formData.get("agree_terms") ?? ""),
   };
 

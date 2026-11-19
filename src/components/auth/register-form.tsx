@@ -16,20 +16,15 @@ export function RegisterForm({ courses }: { courses: Course[] }) {
   const [state, formAction, pending] = useActionState(registerAction, initialState);
   const values = state.values ?? {};
 
-  const [password, setPassword] = useState(values.password ?? "");
-  const [confirmPassword, setConfirmPassword] = useState(values.confirm_password ?? "");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const mismatch = confirmPassword.length > 0 && confirmPassword !== password;
-
-  // Stable key that only changes on a successful submission (state has no
-  // values and no error), preventing React from remounting uncontrolled
-  // inputs and wiping what the student typed.
-  const formKey = state.error ? "retry" : "fresh";
 
   return (
     <>
       {state.error ? <AuthAlert message={state.error} /> : null}
 
-      <form action={formAction} className="space-y-4" key={formKey}>
+      <form action={formAction} className="space-y-4">
         <fieldset disabled={pending} className="space-y-4 disabled:opacity-80">
         <div>
           <label htmlFor="full_name" className="field-label">
@@ -143,7 +138,6 @@ export function RegisterForm({ courses }: { courses: Course[] }) {
           placeholder="At least 8 characters"
           showMeter
           hint="Use at least 8 characters. Longer passwords with mixed characters are stronger."
-          defaultValue={values.password ?? ""}
           onValueChange={setPassword}
         />
 
@@ -153,7 +147,6 @@ export function RegisterForm({ courses }: { courses: Course[] }) {
             label="Confirm password"
             autoComplete="new-password"
             placeholder="Re-enter your password"
-            defaultValue={values.confirm_password ?? ""}
             onValueChange={setConfirmPassword}
           />
           {confirmPassword.length > 0 ? (
