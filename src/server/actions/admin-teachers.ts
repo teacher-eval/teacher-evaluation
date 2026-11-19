@@ -107,6 +107,13 @@ export async function addTeacherAction(
   }
 
   const hasSubject = subjectName.length > 0;
+  if (hasSubject && Array.from(subjectName).length > 100) {
+    return {
+      ok: false,
+      message: "Subject name must be at most 100 characters.",
+      values,
+    };
+  }
   if (hasSubject && !(await isValidCourse(course))) {
     return { ok: false, message: "Please choose a valid course for the subject.", values };
   }
@@ -239,6 +246,7 @@ export async function updateTeacherAction(
   }
 
   const oldImage = target.teacher?.profileImage ?? null;
+  const passwordHash = password !== null ? await hashPassword(password) : null;
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -248,7 +256,7 @@ export async function updateTeacherAction(
           username,
           fullName,
           status,
-          ...(password !== null ? { password: await hashPassword(password) } : {}),
+          ...(passwordHash !== null ? { password: passwordHash } : {}),
         },
       });
       await tx.teacher.update({
@@ -337,6 +345,9 @@ export async function addSubjectAction(formData: FormData): Promise<TeacherFormS
 
   if (subjectName.length === 0) {
     return { ok: false, message: "Subject name is required.", values };
+  }
+  if (Array.from(subjectName).length > 100) {
+    return { ok: false, message: "Subject name must be at most 100 characters.", values };
   }
   if (!(await isValidCourse(course))) {
     return { ok: false, message: "Please choose a valid course.", values };

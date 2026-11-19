@@ -9,22 +9,29 @@ export async function getEvaluationQuestions(): Promise<QuestionItem[]> {
   });
 
   if (questions.length === 0) {
-    // If none exist yet, seed the defaults
-    await prisma.$transaction(
-      DEFAULT_QUESTIONS.map((text, idx) =>
-        prisma.evaluationQuestion.create({
-          data: {
-            questionNo: idx + 1,
-            questionText: text,
-            sortOrder: idx + 1,
-            isActive: true,
-          },
-        }),
-      ),
-    );
+    // Seed the defaults on first read. The advisory lock serialises concurrent
+    // first loads (e.g. two admins opening the page at once) so the ten rows
+    // are inserted exactly once; there is no unique key to fall back on.
+    return prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext('evaluation_questions_seed'))`;
 
-    return prisma.evaluationQuestion.findMany({
-      orderBy: [{ sortOrder: "asc" }, { questionNo: "asc" }],
+      const existing = await tx.evaluationQuestion.findMany({
+        orderBy: [{ sortOrder: "asc" }, { questionNo: "asc" }],
+      });
+      if (existing.length > 0) return existing;
+
+      await tx.evaluationQuestion.createMany({
+        data: DEFAULT_QUESTIONS.map((text, idx) => ({
+          questionNo: idx + 1,
+          questionText: text,
+          sortOrder: idx + 1,
+          isActive: true,
+        })),
+      });
+
+      return tx.evaluationQuestion.findMany({
+        orderBy: [{ sortOrder: "asc" }, { questionNo: "asc" }],
+      });
     });
   }
 

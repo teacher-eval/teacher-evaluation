@@ -11,8 +11,8 @@ import { requireRole } from "@/lib/rbac";
  * backend/controllers/AdminController.php.
  *
  * Course codes are stored on students and subjects as plain strings (there is
- * no foreign key), so renaming a code leaves those rows untouched — the same
- * behaviour as the PHP app.
+ * no foreign key), so renaming a code cascades the new value to both tables and
+ * deleting one is refused while any row still references it.
  */
 
 export type CourseFormValues = {
@@ -94,7 +94,10 @@ export async function updateCourseAction(
   const invalid = validate(courseCode, courseName);
   if (invalid) return { ok: false, message: invalid, values };
 
-  const target = await prisma.course.findUnique({ where: { id }, select: { id: true } });
+  const target = await prisma.course.findUnique({
+    where: { id },
+    select: { id: true, courseCode: true },
+  });
   if (!target) {
     return { ok: false, message: "Course not found.", values };
   }
@@ -111,7 +114,22 @@ export async function updateCourseAction(
   }
 
   try {
-    await prisma.course.update({ where: { id }, data: { courseCode, courseName } });
+    await prisma.$transaction(async (tx) => {
+      await tx.course.update({ where: { id }, data: { courseCode, courseName } });
+
+      // Students and subjects carry the code as a plain string, so keep them in
+      // sync when the administrator renames a course.
+      if (courseCode !== target.courseCode) {
+        await tx.student.updateMany({
+          where: { course: target.courseCode },
+          data: { course: courseCode },
+        });
+        await tx.subject.updateMany({
+          where: { course: target.courseCode },
+          data: { course: courseCode },
+        });
+      }
+    });
   } catch (error) {
     if (isUniqueViolation(error)) {
       return {
@@ -140,10 +158,23 @@ export async function deleteCourseAction(courseId: number): Promise<ActionResult
 
   const target = await prisma.course.findUnique({
     where: { id: courseId },
-    select: { id: true },
+    select: { id: true, courseCode: true },
   });
   if (!target) {
     return { ok: false, message: "Course not found." };
+  }
+
+  const [studentCount, subjectCount] = await Promise.all([
+    prisma.student.count({ where: { course: target.courseCode } }),
+    prisma.subject.count({ where: { course: target.courseCode } }),
+  ]);
+  if (studentCount > 0 || subjectCount > 0) {
+    return {
+      ok: false,
+      message:
+        `Cannot delete this course: ${studentCount} student(s) and ${subjectCount} ` +
+        `subject(s) still use ${target.courseCode}. Move or remove them first.`,
+    };
   }
 
   try {
