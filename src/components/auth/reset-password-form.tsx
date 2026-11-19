@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 
 import { AuthAlert, AuthNotice } from "@/components/auth/auth-shell";
 import { PasswordField } from "@/components/auth/password-field";
@@ -11,6 +11,10 @@ const initialState: AuthFormState = {};
 
 export function ResetPasswordForm({ token }: { token: string }) {
   const [state, formAction, pending] = useActionState(resetPasswordAction, initialState);
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
+  const mismatch = confirmPassword.length > 0 && confirmPassword !== password;
 
   if (state.notice) {
     return (
@@ -42,14 +46,27 @@ export function ResetPasswordForm({ token }: { token: string }) {
           placeholder="At least 8 characters"
           showMeter
           hint="Use at least 8 characters. Longer passwords with mixed characters are stronger."
+          onValueChange={setPassword}
         />
 
-        <PasswordField
-          name="confirm_password"
-          label="Confirm new password"
-          autoComplete="new-password"
-          placeholder="Re-enter your new password"
-        />
+        <div>
+          <PasswordField
+            name="confirm_password"
+            label="Confirm new password"
+            autoComplete="new-password"
+            placeholder="Re-enter your new password"
+            onValueChange={setConfirmPassword}
+          />
+          {confirmPassword.length > 0 ? (
+            <p
+              className="password-match"
+              data-state={mismatch ? "mismatch" : "match"}
+              aria-live="polite"
+            >
+              {mismatch ? "Passwords do not match." : "Passwords match."}
+            </p>
+          ) : null}
+        </div>
 
         <button type="submit" className="btn btn-primary btn-lg w-full" disabled={pending}>
           {pending ? "Resetting…" : "Reset Password"}

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 
 import { AuthAlert } from "@/components/auth/auth-shell";
 import { PasswordField } from "@/components/auth/password-field";
@@ -15,6 +15,10 @@ const initialState: AuthFormState = {};
 export function RegisterForm({ courses }: { courses: Course[] }) {
   const [state, formAction, pending] = useActionState(registerAction, initialState);
   const values = state.values ?? {};
+
+  const [password, setPassword] = useState(values.password ?? "");
+  const [confirmPassword, setConfirmPassword] = useState(values.confirm_password ?? "");
+  const mismatch = confirmPassword.length > 0 && confirmPassword !== password;
 
   // Stable key that only changes on a successful submission (state has no
   // values and no error), preventing React from remounting uncontrolled
@@ -140,15 +144,28 @@ export function RegisterForm({ courses }: { courses: Course[] }) {
           showMeter
           hint="Use at least 8 characters. Longer passwords with mixed characters are stronger."
           defaultValue={values.password ?? ""}
+          onValueChange={setPassword}
         />
 
-        <PasswordField
-          name="confirm_password"
-          label="Confirm password"
-          autoComplete="new-password"
-          placeholder="Re-enter your password"
-          defaultValue={values.confirm_password ?? ""}
-        />
+        <div>
+          <PasswordField
+            name="confirm_password"
+            label="Confirm password"
+            autoComplete="new-password"
+            placeholder="Re-enter your password"
+            defaultValue={values.confirm_password ?? ""}
+            onValueChange={setConfirmPassword}
+          />
+          {confirmPassword.length > 0 ? (
+            <p
+              className="password-match"
+              data-state={mismatch ? "mismatch" : "match"}
+              aria-live="polite"
+            >
+              {mismatch ? "Passwords do not match." : "Passwords match."}
+            </p>
+          ) : null}
+        </div>
 
         <div className="flex items-start gap-2.5">
           <input

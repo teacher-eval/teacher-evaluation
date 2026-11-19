@@ -18,6 +18,8 @@ type PasswordFieldProps = {
   hint?: string;
   showMeter?: boolean;
   required?: boolean;
+  /** Lets a parent compare this field against another (e.g. confirm password). */
+  onValueChange?: (value: string) => void;
 };
 
 export function PasswordField({
@@ -29,6 +31,7 @@ export function PasswordField({
   hint,
   showMeter = false,
   required = true,
+  onValueChange,
 }: PasswordFieldProps) {
   const id = useId();
   const [visible, setVisible] = useState(false);
@@ -48,7 +51,10 @@ export function PasswordField({
           name={name}
           type={visible ? "text" : "password"}
           defaultValue={defaultValue}
-          onChange={(event) => setValue(event.target.value)}
+          onChange={(event) => {
+            setValue(event.target.value);
+            onValueChange?.(event.target.value);
+          }}
           className="input pr-11"
           autoComplete={autoComplete}
           placeholder={placeholder}
