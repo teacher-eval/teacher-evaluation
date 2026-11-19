@@ -5,7 +5,7 @@ import { useActionState, useEffect, useState, useTransition } from "react";
 
 import { TrashIcon } from "@/components/icons";
 import { ModalShell } from "@/components/ui/modal-shell";
-import { teacherAvatarUrl } from "@/lib/storage";
+import { teacherAvatarUrl } from "@/lib/storage-url";
 import {
   addSubjectAction,
   addTeacherAction,

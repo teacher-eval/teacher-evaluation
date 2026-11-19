@@ -1,12 +1,11 @@
 import { SignJWT, jwtVerify } from "jose";
 
-import { requireEnv } from "@/lib/env";
+import { authSecret } from "@/lib/auth-secret";
 
 const encoder = new TextEncoder();
 
 function secretKey(): Uint8Array {
-  const secret = process.env.AUTH_SECRET || "bFOpGf6P6eEbSe804JmUjyx7UR7GgWpT0VA9OOYPHD4";
-  return encoder.encode(secret);
+  return encoder.encode(authSecret());
 }
 
 export const CHALLENGE_COOKIE = "eval_2fa_challenge";

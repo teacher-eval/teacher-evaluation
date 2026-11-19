@@ -11,9 +11,11 @@ const initialState: AuthFormState = {};
 export function VerifyForm({
   method,
   maskedEmail,
+  canChangeEmail = false,
 }: {
   method: "email" | "totp";
   maskedEmail: string | null;
+  canChangeEmail?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(verifyTwoFactorAction, initialState);
   const [resendState, resendAction, resending] = useActionState(
@@ -73,12 +75,14 @@ export function VerifyForm({
                 {resending ? "Sending…" : "Resend code"}
               </button>
             </form>
-            <Link
-              href="/change-2fa-email"
-              className="text-xs font-medium text-navy underline-offset-2 hover:underline"
-            >
-              Change your Gmail address?
-            </Link>
+            {canChangeEmail ? (
+              <Link
+                href="/change-2fa-email"
+                className="text-xs font-medium text-navy underline-offset-2 hover:underline"
+              >
+                Change your Gmail address?
+              </Link>
+            ) : null}
           </>
         ) : null}
         <Link

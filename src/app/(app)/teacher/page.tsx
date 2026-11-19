@@ -7,7 +7,7 @@ import { DateChip } from "@/components/layout/date-chip";
 import { SatisfactionChart } from "@/components/teacher/satisfaction-chart";
 import { formatAverage, formatCount, ratingBand } from "@/lib/ratings";
 import { requireRole } from "@/lib/rbac";
-import { teacherAvatarUrl } from "@/lib/storage";
+import { teacherAvatarUrl } from "@/lib/storage-url";
 import { getTeacherDashboard } from "@/server/queries/teacher-dashboard";
 
 export const metadata: Metadata = { title: "Teacher Dashboard" };

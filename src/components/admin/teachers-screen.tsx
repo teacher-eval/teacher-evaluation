@@ -15,7 +15,7 @@ import { PageHeader } from "@/components/layout/app-shell";
 import { ListPagination } from "@/components/layout/list-pagination";
 import { CloseIcon, PlusIcon } from "@/components/icons";
 import { statusBadge } from "@/lib/status";
-import { teacherAvatarUrl } from "@/lib/storage";
+import { teacherAvatarUrl } from "@/lib/storage-url";
 import { deleteTeacherAction, removeSubjectAction } from "@/server/actions/admin-teachers";
 import type { TeacherRow, TeacherSubject } from "@/server/queries/admin-teachers";
 

@@ -142,6 +142,19 @@ export function AccountSettingsForms({ fullName, username }: Props) {
               <p className="field-hint">Used to sign in. Must be unique.</p>
             </div>
 
+            <div className="border-t border-slate-100 pt-4">
+              <PasswordInput
+                id="profile_current_password"
+                name="current_password"
+                label="Current password"
+                autoComplete="current-password"
+                required={false}
+              />
+              <p className="field-hint mt-1">
+                Required only when changing your username.
+              </p>
+            </div>
+
             <div className="pt-1">
               <button
                 type="submit"
@@ -272,6 +285,7 @@ function PasswordInput({
   minLength,
   ariaDescribedBy,
   onValueChange,
+  required = true,
 }: {
   id: string;
   name: string;
@@ -280,6 +294,7 @@ function PasswordInput({
   minLength?: number;
   ariaDescribedBy?: string;
   onValueChange?: (value: string) => void;
+  required?: boolean;
 }) {
   const [visible, setVisible] = useState(false);
   const toggleLabel = visible ? "Hide password" : "Show password";
@@ -303,7 +318,7 @@ function PasswordInput({
               ? (event) => onValueChange(event.target.value)
               : undefined
           }
-          required
+          required={required}
         />
         <button
           type="button"

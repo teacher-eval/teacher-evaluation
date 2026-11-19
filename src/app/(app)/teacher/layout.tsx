@@ -1,7 +1,7 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/rbac";
-import { teacherAvatarUrl } from "@/lib/storage";
+import { teacherAvatarUrl } from "@/lib/storage-url";
 import { signOutAction } from "@/server/actions/auth";
 
 export default async function TeacherLayout({ children }: { children: React.ReactNode }) {

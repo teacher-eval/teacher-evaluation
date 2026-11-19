@@ -1,8 +1,11 @@
+import "server-only";
+
 import { randomBytes } from "node:crypto";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { optionalEnv, requireEnv } from "@/lib/env";
+import { logError } from "@/lib/logger";
 
 /**
  * Teacher avatar storage.
@@ -10,7 +13,11 @@ import { optionalEnv, requireEnv } from "@/lib/env";
  * The PHP app wrote files to frontend/assets/uploads/teachers and stored the
  * bare filename in teachers.profile_image. On Vercel the filesystem is
  * read-only, so the same column now holds an object path inside a Supabase
- * Storage bucket, and `teacherAvatarUrl()` turns it into a public URL.
+ * Storage bucket, and `teacherAvatarUrl()` (in `@/lib/storage-url`) turns it
+ * into a public URL.
+ *
+ * Marked `server-only`: this module holds the service-role key. The URL helper
+ * lives in `@/lib/storage-url` so client components can use it safely.
  */
 
 const MAX_BYTES = 2 * 1024 * 1024;
@@ -25,27 +32,6 @@ const ALLOWED: Record<string, string> = {
 export type AvatarUpload =
   | { ok: true; path: string }
   | { ok: false; error: string; noFile?: boolean };
-
-/**
- * Resolves a stored avatar reference to a public URL.
- *
- * Legacy rows hold a bare filename under frontend/assets/uploads/teachers.
- * After the storage migration the same column holds the object path inside the
- * Supabase bucket, so no data change is required.
- */
-export function teacherAvatarUrl(value: string | null | undefined): string | null {
-  if (!value) return null;
-  if (/^https?:\/\//i.test(value)) return value;
-
-  const base = process.env.NEXT_PUBLIC_SUPABASE_URL || optionalEnv("NEXT_PUBLIC_SUPABASE_URL");
-  if (!base) return null;
-
-  const bucket =
-    process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET ||
-    optionalEnv("SUPABASE_STORAGE_BUCKET", "teacher-avatar");
-  const path = value.replace(/^\/+/, "");
-  return `${base.replace(/\/+$/, "")}/storage/v1/object/public/${bucket}/${path}`;
-}
 
 let client: SupabaseClient | null = null;
 
@@ -97,13 +83,16 @@ export async function uploadTeacherAvatar(file: File): Promise<AvatarUpload> {
       .upload(path, bytes, { contentType: mime, upsert: false });
 
     if (error) {
-      return { ok: false, error: error.message || "Could not save the uploaded image." };
+      logError("storage.avatar_upload_failed", { message: error.message });
+      return { ok: false, error: "Could not save the uploaded image." };
     }
 
     return { ok: true, path };
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Storage service error.";
-    return { ok: false, error: message };
+    logError("storage.avatar_upload_error", {
+      message: err instanceof Error ? err.message : String(err),
+    });
+    return { ok: false, error: "Storage service error." };
   }
 }
 

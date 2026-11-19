@@ -32,6 +32,7 @@ export default async function LoginPage({
   const errorKey = typeof params.error === "string" ? params.error : undefined;
   const message = errorKey ? ERROR_MESSAGES[errorKey] : undefined;
   const loggedOut = params.logout === "1";
+  const passwordChanged = params.password_changed === "1";
 
   return (
     <div className="mx-auto w-full max-w-[400px]">
@@ -44,6 +45,9 @@ export default async function LoginPage({
 
         {message ? <AuthAlert message={message} /> : null}
         {loggedOut ? <AuthNotice message="Successfully logged out." /> : null}
+        {passwordChanged ? (
+          <AuthNotice message="Password updated. Please sign in again with your new password." />
+        ) : null}
 
         <LoginForm />
         <AuthFooter />

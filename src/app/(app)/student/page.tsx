@@ -8,7 +8,7 @@ import {
 import { daysFromToday, formatDate, isoDateOnly, todayIso } from "@/lib/dates";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/rbac";
-import { teacherAvatarUrl } from "@/lib/storage";
+import { teacherAvatarUrl } from "@/lib/storage-url";
 
 export const metadata: Metadata = { title: "Teacher Evaluation" };
 export const dynamic = "force-dynamic";

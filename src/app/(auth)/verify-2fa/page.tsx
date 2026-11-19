@@ -48,6 +48,7 @@ export default async function VerifyTwoFactorPage() {
         <VerifyForm
           method={challenge.method === "totp" ? "totp" : "email"}
           maskedEmail={masked}
+          canChangeEmail={challenge.status === "pending_2fa"}
         />
 
         <div className="mt-6 border-t border-slate-100 pt-5 text-center">

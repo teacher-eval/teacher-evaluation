@@ -128,6 +128,8 @@ export type PendingChallenge = {
   username: string;
   fullName: string;
   role: UserRole;
+  /** `pending_2fa` means the account has never finished verification. */
+  status: string;
   email: string | null;
   totpSecret: string | null;
   codeHash: string | null;
@@ -158,6 +160,7 @@ export async function getPendingChallenge(): Promise<PendingChallenge | null> { 
     username: challenge.user.username,
     fullName: challenge.user.fullName,
     role: challenge.user.role,
+    status: challenge.user.status,
     email: challenge.user.twoFactor?.email ?? null,
     totpSecret: challenge.user.twoFactor?.totpSecret ?? null,
     codeHash: challenge.codeHash,

@@ -16,6 +16,9 @@ export default async function ChangeTwoFactorEmailPage() {
   const challenge = await getPendingChallenge();
   if (!challenge) redirect("/login?error=2fa_session");
 
+  // Only a never-activated account may change its verification address.
+  if (challenge.status !== "pending_2fa") redirect("/verify-2fa");
+
   if (isChallengeExpired(challenge)) {
     await clearChallengeCookie();
     redirect("/login?error=2fa_expired");

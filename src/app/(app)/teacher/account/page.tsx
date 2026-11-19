@@ -5,7 +5,7 @@ import { IdentityHeader } from "@/components/account/identity-header";
 import { PageHeader } from "@/components/layout/app-shell";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/rbac";
-import { teacherAvatarUrl } from "@/lib/storage";
+import { teacherAvatarUrl } from "@/lib/storage-url";
 
 export const metadata: Metadata = { title: "Account Settings" };
 

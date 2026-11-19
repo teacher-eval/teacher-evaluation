@@ -1,6 +1,5 @@
 "use server";
 
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
@@ -9,7 +8,7 @@ import type { UserRole } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/db";
 import { logAudit, logError, logSecurity } from "@/lib/logger";
 import { homeForRole } from "@/lib/nav";
-import { APP_NAME } from "@/lib/env";
+import { APP_NAME, envFlag, optionalEnv } from "@/lib/env";
 import { sendMail } from "@/lib/mail";
 import {
   clientIp,
@@ -17,7 +16,9 @@ import {
   enforceLoginLimit,
   enforcePasswordResetLimit,
   enforceRegisterLimit,
+  enforceTwoFactorChangeLimit,
   enforceTwoFactorLimit,
+  pruneAuthChallenges,
   pruneRateLimits,
 } from "@/lib/rate-limit";
 import {
@@ -36,6 +37,7 @@ import {
 import {
   clearChallengeCookie,
   getPendingChallenge,
+  setChallengeCookie,
   startChallenge,
   type TwoFactorConfig,
 } from "@/server/auth/challenge";
@@ -93,11 +95,6 @@ export async function loginAction(
   _prev: AuthFormState,
   formData: FormData,
 ): Promise<AuthFormState> {
-  const limit = await enforceLoginLimit();
-  if (!limit.allowed) {
-    return { error: "Too many login attempts. Please wait a few minutes and try again." };
-  }
-
   const parsed = loginSchema.safeParse({
     username: formData.get("username"),
     password: formData.get("password"),
@@ -115,6 +112,12 @@ export async function loginAction(
   }
 
   const { username, password, role } = parsed.data;
+
+  // Per-account first (rotating proxies cannot bypass it), then per-IP.
+  const limit = await enforceLoginLimit(username);
+  if (!limit.allowed) {
+    return { error: "Too many login attempts. Please wait a few minutes and try again." };
+  }
 
   const user = await prisma.user.findFirst({
     where: { username, role },
@@ -140,9 +143,25 @@ export async function loginAction(
     return { error: "This account is inactive. Please contact the administrator." };
   }
 
-  // Teachers never receive a challenge (legacy rule), and accounts that were
-  // already activated log in with a password only.
-  const needsVerification = user.role !== "teacher" && user.status === "pending_2fa";
+  // Brand-new accounts must verify once to activate. After that, any account
+  // that has 2FA enabled is challenged on every login — the old rule only ran
+  // the challenge at sign-up, which meant a stolen password was enough forever.
+  // A row with no usable destination is treated as not configured so legacy
+  // accounts are not locked out. Teachers keep the password-only legacy rule.
+  const twoFactor = user.twoFactor;
+  const twoFactorReady =
+    Boolean(twoFactor?.isEnabled) &&
+    (twoFactor?.method === "email"
+      ? Boolean(twoFactor.email)
+      : Boolean(twoFactor?.totpSecret));
+
+  // Escape hatch for mail outages: flipping this off restores the legacy
+  // "challenge only at sign-up" behaviour without a code change.
+  const challengeEveryLogin = envFlag("REQUIRE_2FA_ON_LOGIN", true);
+
+  const needsVerification =
+    user.role !== "teacher" &&
+    (user.status === "pending_2fa" || (challengeEveryLogin && twoFactorReady));
 
   if (needsVerification) {
     const config: TwoFactorConfig | null = user.twoFactor
@@ -176,8 +195,8 @@ export async function loginAction(
     redirect("/verify-2fa");
   }
 
-  await prisma.rateLimit.deleteMany({ where: { key: `login_${await clientIp()}` } });
   void pruneRateLimits();
+  void pruneAuthChallenges();
 
   logAudit("login_success", { userId: user.id, role: user.role });
   try {
@@ -276,6 +295,7 @@ export async function verifyTwoFactorAction(
 
   await clearChallengeCookie();
   logAudit("2fa_success", { userId: challenge.userId, method: challenge.method });
+  void pruneAuthChallenges();
 
   const user = await prisma.user.findUnique({
     where: { id: challenge.userId },
@@ -293,6 +313,13 @@ export async function verifyTwoFactorAction(
 export async function resendCodeAction(): Promise<AuthFormState> {
   const challenge = await getPendingChallenge();
   if (!challenge) {
+    await clearChallengeCookie();
+    return { error: "Your verification session expired. Please sign in again." };
+  }
+
+  // The page checks this too, but a direct action call must not honour a
+  // challenge that is already past its lifetime.
+  if (challenge.expiresAt.getTime() <= Date.now()) {
     await clearChallengeCookie();
     return { error: "Your verification session expired. Please sign in again." };
   }
@@ -316,6 +343,8 @@ export async function resendCodeAction(): Promise<AuthFormState> {
       expiresAt: new Date(Date.now() + 5 * 60 * 1000),
     },
   });
+  // Refresh the cookie lifetime to match the new code's lifetime.
+  await setChallengeCookie(challenge.id);
 
   const { sendTwoFactorEmail } = await import("@/lib/two-factor");
   const sent = await sendTwoFactorEmail(challenge.email, code, challenge.username);
@@ -496,6 +525,37 @@ export async function changeTwoFactorEmailAction(
     redirect("/login?error=2fa_session");
   }
 
+  if (challenge.expiresAt.getTime() <= Date.now()) {
+    await clearChallengeCookie();
+    redirect("/login?error=2fa_expired");
+  }
+
+  if (challenge.attempts >= TWO_FACTOR_MAX_ATTEMPTS) {
+    await clearChallengeCookie();
+    redirect("/login?error=2fa_attempts");
+  }
+
+  // Only an account that has never been activated may repoint its verification
+  // address. Otherwise anyone who merely knows the password could send the code
+  // to their own inbox and defeat two-factor authentication.
+  const account = await prisma.user.findUnique({
+    where: { id: challenge.userId },
+    select: { status: true },
+  });
+  if (!account || account.status !== "pending_2fa") {
+    await clearChallengeCookie();
+    logSecurity("2fa_email_change_blocked", { userId: challenge.userId });
+    return {
+      error:
+        "This account's verification email can no longer be changed. Contact the administrator.",
+    };
+  }
+
+  const changeLimit = await enforceTwoFactorChangeLimit(challenge.id);
+  if (!changeLimit.allowed) {
+    return { error: "Too many attempts. Please wait a few minutes before trying again." };
+  }
+
   const parsed = z
     .object({ email: z.email("Please enter a valid email address.") })
     .safeParse({ email: formData.get("email") });
@@ -556,30 +616,22 @@ export async function changeTwoFactorEmailAction(
 /* Forgot Password                                                            */
 /* -------------------------------------------------------------------------- */
 
-async function getBaseUrl(): Promise<string> {
-  try {
-    const h = await headers();
-    const origin = h.get("origin");
-    if (origin) return origin.replace(/\/$/, "");
+/**
+ * Absolute origin used to build password-reset links.
+ *
+ * Deliberately built from configuration only. Trusting the request Origin/Host
+ * would let an attacker cause an email to carry a link pointing at their own
+ * domain, capturing the reset token when the victim clicks it.
+ */
+function getBaseUrl(): string {
+  const configured = optionalEnv("APP_URL") ?? optionalEnv("AUTH_URL");
+  if (configured) return configured.replace(/\/+$/, "");
 
-    const host = h.get("x-forwarded-host") ?? h.get("host");
-    const proto = h.get("x-forwarded-proto") ?? (host?.includes("localhost") ? "http" : "https");
-    if (host) return `${proto}://${host}`.replace(/\/$/, "");
-  } catch {
-    // outside request context
-  }
-
-  if (process.env.AUTH_URL && !process.env.AUTH_URL.includes("localhost")) {
-    return process.env.AUTH_URL.replace(/\/$/, "");
-  }
   if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
     return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
   }
   if (process.env.VERCEL_URL) {
     return `https://${process.env.VERCEL_URL}`;
-  }
-  if (process.env.AUTH_URL) {
-    return process.env.AUTH_URL.replace(/\/$/, "");
   }
 
   return "http://localhost:3000";
@@ -615,6 +667,11 @@ export async function forgotPasswordAction(
 
   const { email } = parsed.data;
 
+  // The response never reveals whether an address exists: that would let anyone
+  // enumerate accounts (and learn which ones were deactivated).
+  const neutralNotice =
+    "If that email address is linked to an account, a password reset link is on its way. Please check your inbox and spam folder.";
+
   // Look up user by their registered 2FA email.
   const twoFactor = await prisma.user2fa.findFirst({
     where: {
@@ -626,25 +683,16 @@ export async function forgotPasswordAction(
     include: { user: true },
   });
 
-  if (!twoFactor?.user) {
-    return {
-      error: "No account found with this email address.",
-      values,
-    };
-  }
-
-  if (twoFactor.user.status === "inactive") {
-    return {
-      error: "This account has been deactivated. Please contact an administrator.",
-      values,
-    };
+  if (!twoFactor?.user || twoFactor.user.status === "inactive") {
+    logSecurity("password_reset_unknown_account", { ip: await clientIp() });
+    return { notice: neutralNotice, values };
   }
 
   const user = twoFactor.user;
   const token = await createPasswordResetToken(user.id, user.password);
   const minutes = Math.round(PASSWORD_RESET_TTL_SECONDS / 60);
 
-  const baseUrl = await getBaseUrl();
+  const baseUrl = getBaseUrl();
   const resetUrl = `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`;
 
   try {
@@ -676,18 +724,12 @@ export async function forgotPasswordAction(
     });
   } catch (mailError) {
     logError("password_reset_email_failed", { userId: user.id, error: mailError });
-    return {
-      error: "Failed to send reset email. Please try again later.",
-      values,
-    };
+    return { notice: neutralNotice, values };
   }
 
   logAudit("password_reset_requested", { userId: user.id, username: user.username });
 
-  return {
-    notice:
-      "A password reset link has been sent to your email. Please check your inbox and spam folder.",
-  };
+  return { notice: neutralNotice, values };
 }
 
 /* -------------------------------------------------------------------------- */
