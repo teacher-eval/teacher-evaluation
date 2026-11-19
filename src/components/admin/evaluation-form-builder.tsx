@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useState } from "react";
 
 import { AlertIcon, CheckIcon, PlusIcon, TrashIcon } from "@/components/icons";
 import {
@@ -29,14 +29,6 @@ export function EvaluationFormBuilder({
     saveEvaluationQuestionsAction,
     initialState,
   );
-
-  // Sync state message when action completes
-  useEffect(() => {
-    if (state.message) {
-      // Clear local temporary warnings
-      setAlertWarning(null);
-    }
-  }, [state]);
 
   function handleAddQuestion() {
     if (questions.length >= 10) {
@@ -115,7 +107,8 @@ export function EvaluationFormBuilder({
               <div>
                 <h2 className="section-heading">Evaluation Criteria</h2>
                 <p className="section-subheading">
-                  Reorder and edit criteria. Changes apply to the next evaluation.
+                  Reorder and edit criteria. Numbers map onto the stored rating columns,
+                  so reordering relabels historic results in reports.
                 </p>
               </div>
               <button

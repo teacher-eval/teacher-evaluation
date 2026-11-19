@@ -12,8 +12,6 @@ import { requireRole } from "@/lib/rbac";
 import {
   getAdminReportsData,
   getReportPeriods,
-  periodLabel,
-  reportFileSlug,
   selectPeriod,
   semesterLabel,
 } from "@/server/queries/admin-reports";
@@ -62,7 +60,6 @@ export default async function AdminReportsPage({
     ? `${formatDate(selectedPeriod.startDate)} – ${formatDate(selectedPeriod.endDate)}`
     : "All recorded evaluations";
 
-  const fileSlug = reportFileSlug(selectedPeriod);
   const scopeTotal = data.ratingDistribution.reduce((sum, count) => sum + count, 0);
   const scopeTotalLabel = `${scopeTotal.toLocaleString()} ${
     scopeTotal === 1 ? "evaluation" : "evaluations"

@@ -136,7 +136,8 @@ export type PendingChallenge = {
 };
 
 /** Loads the pending challenge for the verification page/action. */
-export async function getPendingChallenge(): Promise<PendingChallenge | null> {  const id = await challengeIdFromCookie();
+export async function getPendingChallenge(): Promise<PendingChallenge | null> {
+  const id = await challengeIdFromCookie();
   if (!id) return null;
 
   const challenge = await prisma.authChallenge.findUnique({
