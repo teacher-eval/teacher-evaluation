@@ -65,3 +65,12 @@ export function daysFromToday(value: Date, now: Date = new Date()): number {
   const target = Date.parse(`${isoDateOnly(value)}T00:00:00Z`);
   return Math.round((target - today) / 86_400_000);
 }
+
+/**
+ * Human-readable semester from the stored `evaluation_settings.semester`
+ * values ("1st" | "2nd" | "Summer"): "1st Semester", "Summer".
+ */
+export function semesterLabel(semester: string): string {
+  const value = semester.trim();
+  return value === "Summer" ? "Summer" : `${value} Semester`;
+}

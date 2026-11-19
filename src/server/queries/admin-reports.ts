@@ -1,6 +1,6 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
-import { isoDateOnly, todayIso } from "@/lib/dates";
+import { isoDateOnly, semesterLabel, todayIso } from "@/lib/dates";
 
 /**
  * Evaluation report data, rewritten from getReportPeriods() and
@@ -48,10 +48,7 @@ export type AdminReportsData = {
 };
 
 /** Human-readable semester label ("1st Semester", "Summer"). */
-export function semesterLabel(semester: string): string {
-  const value = semester.trim();
-  return value === "Summer" ? "Summer" : `${value} Semester`;
-}
+export { semesterLabel };
 
 export function periodLabel(period: ReportPeriod): string {
   return `AY ${period.academicYear} · ${semesterLabel(period.semester)}`;

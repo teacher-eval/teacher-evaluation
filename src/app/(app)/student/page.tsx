@@ -5,7 +5,7 @@ import {
   EvaluationBoard,
   type Assignment,
 } from "@/components/student/evaluation-board";
-import { daysFromToday, formatDate, isoDateOnly, todayIso } from "@/lib/dates";
+import { daysFromToday, formatDate, isoDateOnly, semesterLabel, todayIso } from "@/lib/dates";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/rbac";
 import { teacherAvatarUrl } from "@/lib/storage-url";
@@ -63,15 +63,14 @@ export default async function StudentDashboardPage() {
       isoDateOnly(activeEvaluation.endDate) >= today,
   );
 
-  // Completed = a reaction for this student, teacher and subject inside the
-  // current period. The stored subject is "Name - COURSE".
+  // Completed = a reaction for this student, teacher and subject *today*. The
+  // unique index (unique_daily_evaluation) allows one evaluation per day, so
+  // the card must clear again the next day.
   const completed = new Set<string>();
-  if (activeEvaluation) {
+  if (activeEvaluation && evaluationActive) {
+    const todayDate = new Date(`${today}T00:00:00Z`);
     const rows = await prisma.reaction.findMany({
-      where: {
-        studId: user.id,
-        date: { gte: activeEvaluation.startDate, lte: activeEvaluation.endDate },
-      },
+      where: { studId: user.id, date: todayDate },
       select: { teacherId: true, subject: true },
     });
     for (const row of rows) {
@@ -217,7 +216,9 @@ export default async function StudentDashboardPage() {
               The teacher evaluation period is not currently active. Please check back
               during the scheduled evaluation period.
             </p>
-            {activeEvaluation ? (
+            {activeEvaluation &&
+            Number.isFinite(daysUntilStart) &&
+            daysUntilStart >= 0 ? (
               <div className="subtle-panel inline-block text-left">
                 <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Next evaluation period
@@ -255,7 +256,7 @@ export default async function StudentDashboardPage() {
                 <p className="mt-0.5 text-sm text-navy-100">
                   {formatDate(activeEvaluation!.startDate)} –{" "}
                   {formatDate(activeEvaluation!.endDate)} ·{" "}
-                  {activeEvaluation!.academicYear} ({activeEvaluation!.semester} Semester)
+                  {activeEvaluation!.academicYear} ({semesterLabel(activeEvaluation!.semester)})
                 </p>
               </div>
             </div>

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
 
 import { AlertIcon, CheckIcon, CloseIcon, PlusIcon, TrashIcon } from "@/components/icons";
-import { formatDate } from "@/lib/dates";
+import { formatDate, semesterLabel } from "@/lib/dates";
 import {
   createEvaluationPeriodAction,
   deleteEvaluationPeriodAction,
@@ -165,7 +165,7 @@ export function EvaluationSettingsScreen({
             <div>
               <dt className="stat-label">Semester</dt>
               <dd className="text-sm font-semibold text-slate-800">
-                {activeSetting.semester}
+                {semesterLabel(activeSetting.semester)}
               </dd>
             </div>
             <div>
@@ -228,7 +228,9 @@ export function EvaluationSettingsScreen({
                       {setting.academicYear}
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <span className="badge badge-info">{setting.semester}</span>
+                      <span className="badge badge-info">
+                        {semesterLabel(setting.semester)}
+                      </span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
