@@ -4,13 +4,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
 
+import { PromoteStudentsModal } from "@/components/admin/promote-students-modal";
 import { EditStudentModal } from "@/components/admin/student-modals";
 import { PageHeader } from "@/components/layout/app-shell";
 import { ListPagination } from "@/components/layout/list-pagination";
 import { CloseIcon, TrashIcon } from "@/components/icons";
 import { statusBadge } from "@/lib/status";
 import { deleteStudentAction } from "@/server/actions/admin-students";
-import type { StudentRow } from "@/server/queries/admin-students";
+import type { PromotionPreview, StudentRow } from "@/server/queries/admin-students";
 
 type Course = { courseCode: string };
 
@@ -19,6 +20,7 @@ type Notice = { tone: "success" | "error"; message: string };
 export function StudentsScreen({
   rows,
   courses,
+  promotion,
   page,
   totalPages,
   totalRecords,
@@ -26,6 +28,7 @@ export function StudentsScreen({
 }: {
   rows: StudentRow[];
   courses: Course[];
+  promotion: PromotionPreview;
   page: number;
   totalPages: number;
   totalRecords: number;
@@ -33,6 +36,7 @@ export function StudentsScreen({
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState<StudentRow | null>(null);
+  const [promoting, setPromoting] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [searchValue, setSearchValue] = useState(search);
   const [pending, startTransition] = useTransition();
@@ -42,6 +46,15 @@ export function StudentsScreen({
   const handleFormSuccess = useCallback(
     (message: string) => {
       setEditing(null);
+      setNotice({ tone: "success", message });
+      router.refresh();
+    },
+    [router],
+  );
+
+  const handlePromotionSuccess = useCallback(
+    (message: string) => {
+      setPromoting(false);
       setNotice({ tone: "success", message });
       router.refresh();
     },
@@ -75,6 +88,15 @@ export function StudentsScreen({
       <PageHeader
         title="Manage Students"
         subtitle="Edit and manage student accounts. Students register through the registration page."
+        actions={
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setPromoting(true)}
+          >
+            Promote students
+          </button>
+        }
       />
 
       <div className="mb-6">
@@ -166,7 +188,9 @@ export function StudentsScreen({
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.map((student) => {
-                const badge = statusBadge(student.status);
+                const badge = student.graduated
+                  ? { label: "Graduated", className: "badge badge-gold" }
+                  : statusBadge(student.status);
 
                 return (
                   <tr key={student.id}>
@@ -244,6 +268,14 @@ export function StudentsScreen({
           courses={courses}
           onClose={closeModal}
           onSuccess={handleFormSuccess}
+        />
+      ) : null}
+
+      {promoting ? (
+        <PromoteStudentsModal
+          preview={promotion}
+          onClose={() => setPromoting(false)}
+          onSuccess={handlePromotionSuccess}
         />
       ) : null}
     </>

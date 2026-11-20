@@ -19,7 +19,7 @@ export default async function StudentDashboardPage() {
   const [student, activeEvaluation, criteria] = await Promise.all([
     prisma.student.findUnique({
       where: { userId: user.id },
-      select: { course: true, yearLevel: true },
+      select: { course: true, yearLevel: true, graduatedAt: true },
     }),
     prisma.evaluationSetting.findFirst({
       where: { isActive: true },
@@ -32,29 +32,68 @@ export default async function StudentDashboardPage() {
     }),
   ]);
 
-  const subjects = student
-    ? await prisma.subject.findMany({
-        where: {
-          course: student.course,
-          yearLevel: student.yearLevel,
-          status: "active",
-          teacher: { status: "active" },
-        },
-        select: {
-          id: true,
-          subjectName: true,
-          course: true,
-          teacherId: true,
-          teacher: {
-            select: {
-              profileImage: true,
-              user: { select: { fullName: true } },
+  const graduated = Boolean(student?.graduatedAt);
+
+  const subjects =
+    student && !graduated
+      ? await prisma.subject.findMany({
+          where: {
+            course: student.course,
+            yearLevel: student.yearLevel,
+            status: "active",
+            teacher: { status: "active" },
+          },
+          select: {
+            id: true,
+            subjectName: true,
+            course: true,
+            teacherId: true,
+            teacher: {
+              select: {
+                profileImage: true,
+                user: { select: { fullName: true } },
+              },
             },
           },
-        },
-        orderBy: [{ teacher: { user: { fullName: "asc" } } }, { subjectName: "asc" }],
-      })
-    : [];
+          orderBy: [{ teacher: { user: { fullName: "asc" } } }, { subjectName: "asc" }],
+        })
+      : [];
+
+  if (graduated) {
+    return (
+      <>
+        <PageHeader title="Teacher Evaluation" subtitle={`Welcome back, ${user.fullName}`} />
+        <div className="card">
+          <div className="empty-state mx-auto max-w-2xl">
+            <div className="empty-state-icon bg-success-100 text-success-700">
+              <svg
+                className="h-9 w-9"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+            </div>
+            <h2 className="font-display text-2xl font-bold text-slate-900">
+              Program completed
+            </h2>
+            <p className="empty-state-text">
+              Congratulations — you have completed your program. Your evaluation
+              history remains on file, and your account no longer receives new
+              evaluation assignments.
+            </p>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   const today = todayIso();
   const evaluationActive = Boolean(

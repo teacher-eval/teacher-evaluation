@@ -21,7 +21,7 @@ export function ModalShell({
   title: string;
   subtitle?: string;
   /** `md` mirrors the narrower course dialogs (max-w-md). */
-  size?: "md" | "lg";
+  size?: "md" | "lg" | "xl";
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -55,7 +55,9 @@ export function ModalShell({
       <div className="modal-backdrop" onClick={onClose} aria-hidden="true" />
       <div
         ref={panel}
-        className={`modal-panel animate-modal-in ${size === "md" ? "max-w-md" : "max-w-lg"}`}
+        className={`modal-panel animate-modal-in ${
+          size === "md" ? "max-w-md" : size === "xl" ? "max-w-2xl" : "max-w-lg"
+        }`}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="modal-header">

@@ -44,7 +44,7 @@ export async function submitEvaluationAction(
   const [student, activeEvaluation, questions] = await Promise.all([
     prisma.student.findUnique({
       where: { userId: user.id },
-      select: { course: true, yearLevel: true },
+      select: { course: true, yearLevel: true, graduatedAt: true },
     }),
     prisma.evaluationSetting.findFirst({
       where: { isActive: true },
@@ -59,6 +59,10 @@ export async function submitEvaluationAction(
 
   if (!student) {
     return { ok: false, message: "Student record not found." };
+  }
+
+  if (student.graduatedAt) {
+    return { ok: false, message: "Your program is already completed." };
   }
 
   if (
