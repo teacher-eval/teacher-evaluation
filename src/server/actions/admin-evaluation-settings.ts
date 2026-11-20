@@ -13,39 +13,46 @@ export type SettingsActionState = {
 };
 
 /**
- * Automatically advances student year levels when an evaluation period for a new
- * academic year is activated or created.
+ * Automatically advances student progress when an evaluation period is activated or created.
  *
  * Rules:
- * - Active students registered before this period's startDate whose
- *   `lastPromotedAcademicYear` is older than `academicYear` (or null):
- *   - Year 1 -> Year 2
- *   - Year 2 -> Year 3
- *   - Year 3 -> Graduated (status: inactive, graduatedAt: now)
- * - Students who registered on or after this period's startDate:
- *   - Stamped with `lastPromotedAcademicYear = academicYear` so they are not bumped
- *     while this academic year is ongoing.
+ * - Each year level consists of 2 semesters (6 semesters total to graduate).
+ * - When a new evaluation period is activated (e.g. "2026-2027_2nd", "2027-2028_1st"):
+ *   - Students who enrolled during this new period (`createdAt >= startDate`) start fresh
+ *     with their registered year level and are stamped with `lastCompletedPeriodKey = periodKey`.
+ *   - Active students who were already enrolled (`lastCompletedPeriodKey !== periodKey` and `createdAt < startDate`):
+ *     - `semestersCompleted += 1`
+ *     - If `semestersCompleted >= 6`:
+ *       - `graduatedAt = new Date()`
+ *       - `status = "inactive"`
+ *     - Else:
+ *       - `yearLevel = 1 + Math.floor(semestersCompleted / 2)` (capped at 3)
+ *     - `lastCompletedPeriodKey = periodKey`
  */
-export async function autoAdvanceStudents(
+export async function advanceStudentsForPeriod(
   tx: Prisma.TransactionClient,
   academicYear: string,
+  semester: string,
   startDate: Date,
 ) {
+  const periodKey = `${academicYear}_${semester}`;
+
   const eligible = await tx.student.findMany({
     where: {
       status: "active",
       graduatedAt: null,
       user: { status: "active" },
       OR: [
-        { lastPromotedAcademicYear: null },
-        { lastPromotedAcademicYear: { lt: academicYear } },
+        { lastCompletedPeriodKey: null },
+        { lastCompletedPeriodKey: { not: periodKey } },
       ],
     },
     select: {
       id: true,
       yearLevel: true,
+      semestersCompleted: true,
       createdAt: true,
-      lastPromotedAcademicYear: true,
+      lastCompletedPeriodKey: true,
     },
   });
 
@@ -55,25 +62,36 @@ export async function autoAdvanceStudents(
     if (isNewEntrant) {
       await tx.student.update({
         where: { id: student.id },
-        data: { lastPromotedAcademicYear: academicYear },
+        data: {
+          lastCompletedPeriodKey: periodKey,
+          lastPromotedAcademicYear: academicYear,
+        },
       });
       continue;
     }
 
-    if (student.yearLevel >= 3) {
+    const nextCompleted = student.semestersCompleted + 1;
+
+    if (nextCompleted >= 6) {
       await tx.student.update({
         where: { id: student.id },
         data: {
+          semestersCompleted: nextCompleted,
+          yearLevel: 3,
           graduatedAt: new Date(),
           status: "inactive",
+          lastCompletedPeriodKey: periodKey,
           lastPromotedAcademicYear: academicYear,
         },
       });
     } else {
+      const nextYearLevel = Math.min(3, 1 + Math.floor(nextCompleted / 2));
       await tx.student.update({
         where: { id: student.id },
         data: {
-          yearLevel: student.yearLevel + 1,
+          semestersCompleted: nextCompleted,
+          yearLevel: nextYearLevel,
+          lastCompletedPeriodKey: periodKey,
           lastPromotedAcademicYear: academicYear,
         },
       });
@@ -126,8 +144,8 @@ export async function createEvaluationPeriodAction(
           data: { isActive: false },
         });
 
-        // Auto-advance eligible students to the new academic year
-        await autoAdvanceStudents(tx, academicYear, start);
+        // Auto-advance eligible students to the new semester/year
+        await advanceStudentsForPeriod(tx, academicYear, semester, start);
       }
 
       await tx.evaluationSetting.create({
@@ -198,11 +216,14 @@ export async function updateEvaluationPeriodAction(
     await prisma.$transaction(async (tx) => {
       const existing = await tx.evaluationSetting.findUnique({
         where: { id },
-        select: { isActive: true, academicYear: true },
+        select: { isActive: true, academicYear: true, semester: true },
       });
 
-      if (existing?.isActive && academicYear !== existing.academicYear) {
-        await autoAdvanceStudents(tx, academicYear, start);
+      if (
+        existing?.isActive &&
+        (academicYear !== existing.academicYear || semester !== existing.semester)
+      ) {
+        await advanceStudentsForPeriod(tx, academicYear, semester, start);
       }
 
       await tx.evaluationSetting.update({
@@ -255,7 +276,7 @@ export async function activateEvaluationPeriodAction(
         data: { isActive: true },
       });
 
-      await autoAdvanceStudents(tx, target.academicYear, target.startDate);
+      await advanceStudentsForPeriod(tx, target.academicYear, target.semester, target.startDate);
     });
 
     revalidatePath("/admin/evaluation-settings");

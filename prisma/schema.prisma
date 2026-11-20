@@ -73,11 +73,15 @@ model Student {
   course    String       @db.VarChar(50)
   yearLevel Int          @map("year_level")
   status    RecordStatus @default(active)
-  /// The academic year this student was last rolled into by an admin. Null for
-  /// students who have never been promoted; guards against running a rollover
-  /// twice for the same year. Deliberately not an enrollment record.
+  /// Number of completed semesters (0-5, 6 = graduated).
+  /// Every 2 completed semesters = +1 Year Level.
+  semestersCompleted Int       @default(0) @map("semesters_completed")
+  /// The evaluation period key (e.g. "2026-2027_1st") the student was last active in.
+  /// Prevents advancing multiple times for the same semester.
+  lastCompletedPeriodKey String? @map("last_completed_period_key") @db.VarChar(50)
+  /// The academic year this student was last rolled into by an admin. Deliberately not an enrollment record.
   lastPromotedAcademicYear String?   @map("last_promoted_academic_year") @db.VarChar(20)
-  /// Set when a 3rd-year student is rolled over. Graduates keep their account
+  /// Set when a 3rd-year student completes their program. Graduates keep their account
   /// and evaluation history but are excluded from active lists.
   graduatedAt              DateTime? @map("graduated_at") @db.Timestamptz(3)
   createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)

@@ -185,7 +185,16 @@ export function StudentsScreen({
                       {student.fullName}
                     </td>
                     <td className="font-medium text-slate-600">{student.course}</td>
-                    <td className="text-center text-slate-600">{student.yearLevel}</td>
+                    <td className="text-center text-slate-600">
+                      <div className="font-semibold text-slate-800">
+                        Year {student.yearLevel}
+                      </div>
+                      {!student.graduated && (
+                        <div className="text-xs text-slate-400">
+                          {student.semestersCompleted % 2 === 0 ? "1st Sem" : "2nd Sem"}
+                        </div>
+                      )}
+                    </td>
                     <td className="text-center">
                       <span className={badge.className}>{badge.label}</span>
                     </td>

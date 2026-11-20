@@ -123,7 +123,8 @@ export async function updateStudentAction(
           status: status === "active" ? "active" : "inactive",
           // Re-activating a graduate turns them back into a regular student.
           graduatedAt: status === "active" ? null : undefined,
-          // Clearing the promotion lock so manual admin edits allow promoting again.
+          // Reset semesters completed based on the manual year level setting
+          semestersCompleted: (yearLevel - 1) * 2,
           lastPromotedAcademicYear: null,
         },
       }),

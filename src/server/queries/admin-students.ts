@@ -11,6 +11,7 @@ export type StudentRow = {
   fullName: string;
   course: string;
   yearLevel: number;
+  semestersCompleted: number;
   /** True once an admin rolled a 3rd-year student over into graduation. */
   graduated: boolean;
   /** users.status, which is a free-form string rather than the students enum. */
@@ -64,7 +65,12 @@ export async function getStudentList({
         fullName: true,
         status: true,
         student: {
-          select: { course: true, yearLevel: true, graduatedAt: true },
+          select: {
+            course: true,
+            yearLevel: true,
+            semestersCompleted: true,
+            graduatedAt: true,
+          },
         },
       },
     }),
@@ -80,6 +86,7 @@ export async function getStudentList({
       fullName: user.fullName,
       course: user.student!.course,
       yearLevel: user.student!.yearLevel,
+      semestersCompleted: user.student!.semestersCompleted,
       graduated: user.student!.graduatedAt !== null,
       status: user.status,
     })),

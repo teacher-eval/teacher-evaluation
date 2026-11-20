@@ -478,8 +478,12 @@ export async function registerAction(
 
       const activePeriod = await tx.evaluationSetting.findFirst({
         where: { isActive: true },
-        select: { academicYear: true },
+        select: { academicYear: true, semester: true },
       });
+
+      const periodKey = activePeriod
+        ? `${activePeriod.academicYear}_${activePeriod.semester}`
+        : null;
 
       await tx.student.create({
         data: {
@@ -487,6 +491,8 @@ export async function registerAction(
           course,
           yearLevel,
           status: "active",
+          semestersCompleted: (yearLevel - 1) * 2,
+          lastCompletedPeriodKey: periodKey,
           lastPromotedAcademicYear: activePeriod?.academicYear ?? null,
         },
       });
