@@ -6,6 +6,7 @@ import { useCallback, useState, useTransition } from "react";
 import { AlertIcon, CheckIcon, CloseIcon, PlusIcon, TrashIcon } from "@/components/icons";
 import { formatDate, semesterLabel } from "@/lib/dates";
 import {
+  activateEvaluationPeriodAction,
   createEvaluationPeriodAction,
   deleteEvaluationPeriodAction,
   terminateEvaluationPeriodAction,
@@ -46,6 +47,18 @@ export function EvaluationSettingsScreen({
         router.refresh();
       } else {
         setNotice({ tone: "error", message: result.message || "Failed to end period." });
+      }
+    });
+  }
+
+  function handleActivate(id: number) {
+    startTransition(async () => {
+      const result = await activateEvaluationPeriodAction(id);
+      if (result.ok) {
+        setNotice({ tone: "success", message: result.message || "Period activated!" });
+        router.refresh();
+      } else {
+        setNotice({ tone: "error", message: result.message || "Failed to activate period." });
       }
     });
   }
@@ -246,7 +259,18 @@ export function EvaluationSettingsScreen({
                   <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
                     Evaluation Period Actions
                   </p>
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-2">
+                    {!setting.isActive && (
+                      <button
+                        type="button"
+                        onClick={() => handleActivate(setting.id)}
+                        disabled={pending}
+                        className="btn btn-secondary btn-sm text-xs font-semibold"
+                        title="Set as active evaluation period and update student year levels"
+                      >
+                        Activate
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setModal({ type: "edit", setting })}

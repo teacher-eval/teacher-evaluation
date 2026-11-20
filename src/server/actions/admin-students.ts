@@ -35,11 +35,6 @@ export type ActionResult = {
   message: string;
 };
 
-export type PromotionActionState = {
-  ok: boolean;
-  message?: string;
-};
-
 const USERNAME_PATTERN = /^[A-Za-z0-9_]{3,50}$/;
 
 export async function updateStudentAction(
@@ -143,124 +138,6 @@ export async function updateStudentAction(
   revalidatePath("/admin");
 
   return { ok: true, message: "Student updated successfully!" };
-}
-
-/**
- * Bulk year-level rollover. The admin picks the target academic year and the
- * exact students; every eligible student moves 1 → 2, 2 → 3, and 3 graduates
- * (account stays usable, but the student leaves the active lists).
- *
- * `lastPromotedAcademicYear` is the idempotency guard: re-submitting the same
- * year skips everyone who was already rolled over. No enrollment table is
- * involved — this is only a bulk edit of `students.year_level`.
- */
-export async function promoteStudentsAction(
-  _prev: PromotionActionState,
-  formData: FormData,
-): Promise<PromotionActionState> {
-  await requireRole("admin");
-
-  const academicYear = text(formData.get("academic_year"));
-  if (!/^\d{4}-\d{4}$/.test(academicYear)) {
-    return { ok: false, message: "Please choose a valid academic year (YYYY-YYYY)." };
-  }
-
-  const studentIds = [
-    ...new Set(
-      formData
-        .getAll("student_ids")
-        .map((value) => Number.parseInt(String(value), 10))
-        .filter((value) => Number.isInteger(value) && value > 0),
-    ),
-  ];
-
-  if (studentIds.length === 0) {
-    return { ok: false, message: "Select at least one student to promote." };
-  }
-
-  const eligible = await prisma.student.findMany({
-    where: {
-      id: { in: studentIds },
-      status: "active",
-      graduatedAt: null,
-      user: { status: "active" },
-    },
-    select: { id: true, yearLevel: true, lastPromotedAcademicYear: true },
-  });
-
-  if (eligible.length === 0) {
-    return {
-      ok: false,
-      message: "None of the selected students are eligible for promotion.",
-    };
-  }
-
-  let promoted = 0;
-  let graduated = 0;
-  let skipped = studentIds.length - eligible.length;
-
-  const updates: ReturnType<typeof prisma.student.update>[] = [];
-
-  for (const student of eligible) {
-    // Never move a student backwards into a year they were already rolled into.
-    if (
-      student.lastPromotedAcademicYear !== null &&
-      student.lastPromotedAcademicYear >= academicYear
-    ) {
-      skipped += 1;
-      continue;
-    }
-
-    if (student.yearLevel >= 3) {
-      updates.push(
-        prisma.student.update({
-          where: { id: student.id },
-          data: {
-            graduatedAt: new Date(),
-            status: "inactive",
-            lastPromotedAcademicYear: academicYear,
-          },
-        }),
-      );
-      graduated += 1;
-      continue;
-    }
-
-    updates.push(
-      prisma.student.update({
-        where: { id: student.id },
-        data: {
-          yearLevel: student.yearLevel + 1,
-          lastPromotedAcademicYear: academicYear,
-        },
-      }),
-    );
-    promoted += 1;
-  }
-
-  if (updates.length === 0) {
-    return {
-      ok: false,
-      message: `No changes for AY ${academicYear} — ${skipped} student(s) were already rolled over.`,
-    };
-  }
-
-  try {
-    await prisma.$transaction(updates);
-  } catch {
-    logError("admin.student_promotion_failed", { academicYear, count: updates.length });
-    return { ok: false, message: "Failed to promote students. Please try again." };
-  }
-
-  logAudit("admin.students_promoted", { academicYear, promoted, graduated, skipped });
-  revalidatePath("/admin/students");
-  revalidatePath("/admin");
-  revalidatePath("/student");
-
-  const parts = [`${promoted} promoted`, `${graduated} graduated`];
-  if (skipped > 0) parts.push(`${skipped} skipped`);
-
-  return { ok: true, message: `AY ${academicYear}: ${parts.join(" · ")}.` };
 }
 
 export async function deleteStudentAction(userId: number): Promise<ActionResult> {

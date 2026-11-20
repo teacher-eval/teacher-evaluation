@@ -476,8 +476,19 @@ export async function registerAction(
         },
       });
 
+      const activePeriod = await tx.evaluationSetting.findFirst({
+        where: { isActive: true },
+        select: { academicYear: true },
+      });
+
       await tx.student.create({
-        data: { userId: created.id, course, yearLevel, status: "active" },
+        data: {
+          userId: created.id,
+          course,
+          yearLevel,
+          status: "active",
+          lastPromotedAcademicYear: activePeriod?.academicYear ?? null,
+        },
       });
 
       await tx.user2fa.create({

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { logError } from "@/lib/logger";
 import { requireRole } from "@/lib/rbac";
@@ -10,6 +11,75 @@ export type SettingsActionState = {
   ok: boolean;
   message?: string;
 };
+
+/**
+ * Automatically advances student year levels when an evaluation period for a new
+ * academic year is activated or created.
+ *
+ * Rules:
+ * - Active students registered before this period's startDate whose
+ *   `lastPromotedAcademicYear` is older than `academicYear` (or null):
+ *   - Year 1 -> Year 2
+ *   - Year 2 -> Year 3
+ *   - Year 3 -> Graduated (status: inactive, graduatedAt: now)
+ * - Students who registered on or after this period's startDate:
+ *   - Stamped with `lastPromotedAcademicYear = academicYear` so they are not bumped
+ *     while this academic year is ongoing.
+ */
+export async function autoAdvanceStudents(
+  tx: Prisma.TransactionClient,
+  academicYear: string,
+  startDate: Date,
+) {
+  const eligible = await tx.student.findMany({
+    where: {
+      status: "active",
+      graduatedAt: null,
+      user: { status: "active" },
+      OR: [
+        { lastPromotedAcademicYear: null },
+        { lastPromotedAcademicYear: { lt: academicYear } },
+      ],
+    },
+    select: {
+      id: true,
+      yearLevel: true,
+      createdAt: true,
+      lastPromotedAcademicYear: true,
+    },
+  });
+
+  for (const student of eligible) {
+    const isNewEntrant = student.createdAt >= startDate;
+
+    if (isNewEntrant) {
+      await tx.student.update({
+        where: { id: student.id },
+        data: { lastPromotedAcademicYear: academicYear },
+      });
+      continue;
+    }
+
+    if (student.yearLevel >= 3) {
+      await tx.student.update({
+        where: { id: student.id },
+        data: {
+          graduatedAt: new Date(),
+          status: "inactive",
+          lastPromotedAcademicYear: academicYear,
+        },
+      });
+    } else {
+      await tx.student.update({
+        where: { id: student.id },
+        data: {
+          yearLevel: student.yearLevel + 1,
+          lastPromotedAcademicYear: academicYear,
+        },
+      });
+    }
+  }
+}
 
 export async function createEvaluationPeriodAction(
   _prev: SettingsActionState,
@@ -55,6 +125,9 @@ export async function createEvaluationPeriodAction(
         await tx.evaluationSetting.updateMany({
           data: { isActive: false },
         });
+
+        // Auto-advance eligible students to the new academic year
+        await autoAdvanceStudents(tx, academicYear, start);
       }
 
       await tx.evaluationSetting.create({
@@ -69,7 +142,9 @@ export async function createEvaluationPeriodAction(
     });
 
     revalidatePath("/admin/evaluation-settings");
+    revalidatePath("/admin/students");
     revalidatePath("/admin/reports");
+    revalidatePath("/admin");
     revalidatePath("/student");
 
     return { ok: true, message: "Evaluation period configured successfully!" };
@@ -120,18 +195,31 @@ export async function updateEvaluationPeriodAction(
       return { ok: false, message: "End date must be after start date." };
     }
 
-    await prisma.evaluationSetting.update({
-      where: { id },
-      data: {
-        academicYear,
-        semester,
-        startDate: start,
-        endDate: end,
-      },
+    await prisma.$transaction(async (tx) => {
+      const existing = await tx.evaluationSetting.findUnique({
+        where: { id },
+        select: { isActive: true, academicYear: true },
+      });
+
+      if (existing?.isActive && academicYear !== existing.academicYear) {
+        await autoAdvanceStudents(tx, academicYear, start);
+      }
+
+      await tx.evaluationSetting.update({
+        where: { id },
+        data: {
+          academicYear,
+          semester,
+          startDate: start,
+          endDate: end,
+        },
+      });
     });
 
     revalidatePath("/admin/evaluation-settings");
+    revalidatePath("/admin/students");
     revalidatePath("/admin/reports");
+    revalidatePath("/admin");
     revalidatePath("/student");
 
     return { ok: true, message: "Evaluation period updated successfully!" };
@@ -140,6 +228,51 @@ export async function updateEvaluationPeriodAction(
       error: error instanceof Error ? error.message : String(error),
     });
     return { ok: false, message: "Failed to update evaluation period." };
+  }
+}
+
+export async function activateEvaluationPeriodAction(
+  id: number,
+): Promise<SettingsActionState> {
+  try {
+    await requireRole("admin");
+
+    const target = await prisma.evaluationSetting.findUnique({
+      where: { id },
+    });
+
+    if (!target) {
+      return { ok: false, message: "Evaluation period not found." };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.evaluationSetting.updateMany({
+        data: { isActive: false },
+      });
+
+      await tx.evaluationSetting.update({
+        where: { id },
+        data: { isActive: true },
+      });
+
+      await autoAdvanceStudents(tx, target.academicYear, target.startDate);
+    });
+
+    revalidatePath("/admin/evaluation-settings");
+    revalidatePath("/admin/students");
+    revalidatePath("/admin/reports");
+    revalidatePath("/admin");
+    revalidatePath("/student");
+
+    return {
+      ok: true,
+      message: `AY ${target.academicYear} activated and student year levels updated!`,
+    };
+  } catch (error) {
+    logError("activateEvaluationPeriodAction", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { ok: false, message: "Failed to activate evaluation period." };
   }
 }
 
